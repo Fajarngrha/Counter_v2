@@ -1,0 +1,28 @@
+{
+  "shift_history": [
+    {
+      "id": 1,
+      "tanggal": "2026-06-16",
+      "shift": "Shift 1",
+      "total_barang": 0,
+      "timestamp_saved": "2026-06-16T13:12:37.290Z"
+    }
+  ],
+  "current_state": {
+    "shift": "Shift 2",
+    "shift_date": "2026-06-16",
+    "count": 0,
+    "daily_total": 0,
+    "daily_date": "2026-06-16",
+    "last_iot_seen": null,
+    "updated_at": "2026-06-16T13:12:37.290Z"
+  },
+  "production_target": {
+    "target_per_hour": 1800,
+    "pcs_per_interval": 5,
+    "interval_seconds": 10
+  },
+  "_meta": {
+    "last_history_id": 1
+  }
+}

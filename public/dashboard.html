@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>IoT Production Counter - Dashboard</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <div class="dashboard">
+    <header class="dashboard-header">
+      <div class="dashboard-title">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"></path>
+        </svg>
+        <span>IoT Production Counter</span>
+      </div>
+
+      <div class="header-actions">
+        <a class="btn btn-ghost btn-sm" href="/history" title="Riwayat">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <path d="M3 12a9 9 0 1 0 3-6.7"></path>
+            <path d="M3 3v6h6"></path>
+            <path d="M12 7v5l4 2"></path>
+          </svg>
+          Riwayat
+        </a>
+        <button id="btnLogout" class="btn btn-ghost btn-sm" type="button" title="Keluar">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+            <path d="M16 17l5-5-5-5"></path>
+            <path d="M21 12H9"></path>
+          </svg>
+          Keluar
+        </button>
+      </div>
+    </header>
+
+    <section class="status-row">
+      <div class="card">
+        <div class="card-label">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <circle cx="12" cy="12" r="10"></circle>
+            <path d="M12 6v6l4 2"></path>
+          </svg>
+          Waktu Aktual
+        </div>
+        <div id="timeNow" class="status-value">--.--.--</div>
+        <div id="dateNow" class="status-sub">-</div>
+      </div>
+
+      <div class="card">
+        <div class="card-label">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <path d="M9 18l6-6-6-6"></path>
+          </svg>
+          Status Shift
+        </div>
+        <div id="shiftLabel" class="status-value" style="font-size: 1.2rem;">-</div>
+        <div id="shiftRange" class="status-sub">-</div>
+      </div>
+
+      <div class="card">
+        <div class="card-label">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <path d="M5 13a10 10 0 0 1 14 0"></path>
+            <path d="M8.5 16.5a5 5 0 0 1 7 0"></path>
+            <path d="M12 20h0"></path>
+          </svg>
+          Status IoT
+        </div>
+        <div id="iotStatus" class="status-value" style="font-size: 1.2rem;">-</div>
+        <div id="iotLastSeen" class="status-sub">-</div>
+      </div>
+    </section>
+
+    <section class="main-row">
+      <div class="card counter-card">
+        <div id="counterTitle" class="counter-label">TOTAL BARANG — -</div>
+        <div id="counterValue" class="counter-value">0</div>
+        <div class="counter-unit">satuan / pcs</div>
+        <button id="btnManual" class="btn btn-manual" type="button">+ Tambah Manual (Demo)</button>
+      </div>
+
+      <div class="card">
+        <div class="target-header">
+          <h3>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+              <circle cx="12" cy="12" r="10"></circle>
+              <circle cx="12" cy="12" r="6"></circle>
+              <circle cx="12" cy="12" r="2"></circle>
+            </svg>
+            Target Produksi
+          </h3>
+          <button id="btnEditTarget" class="btn btn-ghost btn-sm" type="button">Edit Target</button>
+        </div>
+
+        <div class="target-grid">
+          <div class="target-item">
+            <div class="label">Target / Jam</div>
+            <div class="value green"><span id="targetPerHour">-</span> <span style="font-size:0.9rem;color:var(--text-muted);font-weight:600;">pcs</span></div>
+          </div>
+          <div class="target-item">
+            <div class="label">Target / Shift (<span id="shiftHours">-</span>h)</div>
+            <div class="value green"><span id="targetPerShift">-</span> <span style="font-size:0.9rem;color:var(--text-muted);font-weight:600;">pcs</span></div>
+          </div>
+          <div class="target-item">
+            <div class="label">Laju Saat Ini</div>
+            <div class="value"><span id="currentRate">-</span> <span style="font-size:0.9rem;color:var(--text-muted);font-weight:600;">pcs/jam</span></div>
+          </div>
+          <div class="target-item">
+            <div class="label">Proyeksi Akhir Shift</div>
+            <div class="value red"><span id="projection">-</span> <span style="font-size:0.9rem;color:var(--text-muted);font-weight:600;">pcs (est.)</span></div>
+          </div>
+        </div>
+
+        <div class="progress-section">
+          <div class="progress-header">
+            <span>Progress terhadap target shift</span>
+            <span><span id="progressPercent">0</span>%</span>
+          </div>
+          <div class="progress-bar">
+            <div id="progressFill" class="progress-fill"></div>
+          </div>
+        </div>
+
+        <div id="alertBox" class="alert-box hidden">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+            <path d="M12 9v4"></path>
+            <path d="M12 17h.01"></path>
+          </svg>
+          <div id="alertText">-</div>
+        </div>
+
+        <div class="target-footer">Laju target: <span id="rateLabel">-</span></div>
+      </div>
+    </section>
+
+    <section class="bottom-row">
+      <div class="card">
+        <div class="card-label">Total Hari Ini (Semua Shift)</div>
+        <div id="dailyTotal" class="bottom-value">0</div>
+        <div class="status-sub">Termasuk shift yang sedang berjalan.</div>
+      </div>
+      <div class="card">
+        <div class="card-label">Shift Berikutnya</div>
+        <div id="nextShiftName" class="status-value" style="font-size: 1.35rem;">-</div>
+        <div class="status-sub">Dimulai pukul <span id="nextShiftStart">-</span></div>
+      </div>
+    </section>
+  </div>
+
+  <!-- Modal Edit Target -->
+  <div id="modalOverlay" class="modal-overlay" role="dialog" aria-modal="true">
+    <div class="modal">
+      <h3>Edit Target Produksi</h3>
+      <div class="form-group">
+        <label for="inpTargetPerHour">Target per jam (pcs)</label>
+        <input id="inpTargetPerHour" type="number" min="1" step="1" placeholder="Contoh: 1800">
+      </div>
+      <div class="form-group">
+        <label for="inpPcsPerInterval">Laju target (pcs)</label>
+        <input id="inpPcsPerInterval" type="number" min="1" step="1" placeholder="Contoh: 5">
+      </div>
+      <div class="form-group">
+        <label for="inpIntervalSeconds">Per (detik)</label>
+        <input id="inpIntervalSeconds" type="number" min="1" step="1" placeholder="Contoh: 10">
+      </div>
+      <div class="modal-actions">
+        <button id="btnCancelModal" class="btn btn-ghost" type="button">Batal</button>
+        <button id="btnSaveTarget" class="btn btn-primary" type="button">Simpan</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/js/dashboard.js"></script>
+</body>
+</html>
+
