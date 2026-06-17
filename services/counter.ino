@@ -3,35 +3,24 @@
 #include <ThreeWire.h>
 #include <RtcDS1302.h>
 
-// ==========================================
-// 1. PENGATURAN WIFI & MQTT
-// ==========================================
 const char* ssid = "ARRAZKA 2 LANTAI 2";
 const char* password = "Razka1109";
 const char* mqtt_server = "192.168.0.104";
 const int mqtt_port = 1883;
 
-// Samakan dengan MQTT_TOPIC di backend (.env)
 const char* mqtt_topic = "iot/counter/increment";
-// jika backend kamu masih pakai pabrik/line1/counter, ganti sesuai itu
 
-// ==========================================
-// 2. PIN, COUNTER, RTC DS1302
-// ==========================================
 const int pinRelay = 5;
 
-// DS1302: DAT/IO, CLK/SCLK, RST/CE
 ThreeWire myWire(7, 6, 10);
 RtcDS1302<ThreeWire> Rtc(myWire);
 
-// Counter dari ISR -> volatile
 volatile unsigned long totalCounter = 0;
 unsigned long lastCounterSent = 0;
 
 volatile unsigned long lastDebounceTime = 0;
 const unsigned long debounceDelay = 300; // ms
 
-// Lock untuk akses variabel shared ISR <-> loop
 portMUX_TYPE mux = portMUX_INITIALIZER_UNLOCKED;
 
 WiFiClient espClient;
@@ -39,9 +28,6 @@ PubSubClient client(espClient);
 
 unsigned long lastMqttReconnectAttempt = 0;
 
-// ==========================================
-// 3. INTERRUPT COUNTER
-// ==========================================
 void IRAM_ATTR hitungBarang() {
   unsigned long currentTime = millis();
   if ((currentTime - lastDebounceTime) > debounceDelay) {
@@ -50,9 +36,6 @@ void IRAM_ATTR hitungBarang() {
   }
 }
 
-// ==========================================
-// 4. WIFI
-// ==========================================
 void setup_wifi() {
   delay(10);
   Serial.print("Menghubungkan ke WiFi: ");
@@ -71,9 +54,7 @@ void setup_wifi() {
   Serial.println(WiFi.localIP());
 }
 
-// ==========================================
-// 5. MQTT
-// ==========================================
+
 bool reconnectMqtt() {
   if (client.connected()) return true;
 
@@ -91,9 +72,6 @@ bool reconnectMqtt() {
   return false;
 }
 
-// ==========================================
-// 6. RTC HELPER
-// ==========================================
 void initRtc() {
   Rtc.Begin();
   Rtc.SetIsWriteProtected(false);
@@ -121,13 +99,10 @@ String getRtcTimestamp() {
   return String(timeBuffer);
 }
 
-// ==========================================
-// 7. SETUP
-// ==========================================
 void setup() {
   Serial.begin(115200);
   delay(2000);
-  Serial.println("\n--- Sistem IoT Counter + RTC DS1302 Memulai ---");
+  Serial.println("\n--- Sistem Smart Counter Memulai ---");
 
   initRtc();
 
@@ -138,9 +113,7 @@ void setup() {
   attachInterrupt(digitalPinToInterrupt(pinRelay), hitungBarang, FALLING);
 }
 
-// ==========================================
-// 8. LOOP
-// ==========================================
+
 void loop() {
   // Jaga koneksi MQTT non-blocking
   if (!client.connected()) {
@@ -153,18 +126,13 @@ void loop() {
     client.loop();
   }
 
-  // Ambil snapshot counter secara aman
   unsigned long snapshotCounter;
   portENTER_CRITICAL(&mux);
   snapshotCounter = totalCounter;
   portEXIT_CRITICAL(&mux);
 
-  // Jika ada barang baru terdeteksi
   if (snapshotCounter != lastCounterSent && client.connected()) {
     String waktu = getRtcTimestamp();
-
-    // Format payload sesuai backend:
-    // [{"waktu":"2026-06-16 19:01:29","counter":5}]
     String payload = "[{\"waktu\":\"" + waktu + "\",\"counter\":" + String(snapshotCounter) + "}]";
 
     bool ok = client.publish(mqtt_topic, payload.c_str());

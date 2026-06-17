@@ -3,6 +3,7 @@ const {
   updateState,
   saveShiftHistory,
   getTarget,
+  buildTargetSnapshot,
 } = require('../db/database');
 const {
   getCurrentShift,
@@ -21,6 +22,11 @@ let lastBoundaryMin = -1;
 let shiftStartCount = 0;
 let shiftStartTime = null;
 
+function saveShiftRecord(tanggal, shift, totalBarang) {
+  const target = buildTargetSnapshot(getTarget(), shift);
+  saveShiftHistory(tanggal, shift, totalBarang, target);
+}
+
 function initCounter() {
   const state = getState();
   const shift = getCurrentShift();
@@ -29,7 +35,7 @@ function initCounter() {
 
   if (state.shift !== shift.name || state.shift_date !== shiftDate) {
     if (state.count > 0 || state.shift !== shift.name) {
-      saveShiftHistory(state.shift_date, state.shift, state.count);
+      saveShiftRecord(state.shift_date, state.shift, state.count);
     }
     updateState({
       shift: shift.name,
@@ -56,7 +62,7 @@ function handleShiftBoundary() {
 
   const state = getState();
   if (state.count > 0) {
-    saveShiftHistory(state.shift_date, state.shift, state.count);
+    saveShiftRecord(state.shift_date, state.shift, state.count);
   }
 
   const newShift = getCurrentShift();
@@ -90,7 +96,7 @@ function incrementCounter(amount = 1) {
 
   if (currentShift !== shift.name || currentShiftDate !== shiftDate) {
     if (count > 0) {
-      saveShiftHistory(currentShiftDate, currentShift, count);
+      saveShiftRecord(currentShiftDate, currentShift, count);
     }
     currentShift = shift.name;
     currentShiftDate = shiftDate;
@@ -133,7 +139,7 @@ function applyDeviceCounter(deviceCounter, deviceTime) {
 
   if (currentShift !== shift.name || currentShiftDate !== shiftDate) {
     if (count > 0) {
-      saveShiftHistory(currentShiftDate, currentShift, count);
+      saveShiftRecord(currentShiftDate, currentShift, count);
     }
     currentShift = shift.name;
     currentShiftDate = shiftDate;

@@ -75,103 +75,108 @@
     </section>
 
     <section class="main-row">
-      <div class="card counter-card">
-        <div id="counterTitle" class="counter-label">TOTAL BARANG — -</div>
-        <div id="counterValue" class="counter-value">0</div>
-        <div class="counter-unit">satuan / pcs</div>
-        <button id="btnManual" class="btn btn-manual" type="button">+ Tambah Manual (Demo)</button>
+      <!-- Kolom kiri: Counter + Total Hari Ini -->
+      <div class="main-col-left">
+        <div class="card counter-card">
+          <div id="counterTitle" class="counter-label">TOTAL BARANG — -</div>
+          <div id="counterValue" class="counter-value">0</div>
+          <div class="counter-unit">pcs</div>
+        </div>
+
+        <div class="card daily-card">
+          <div class="card-label">Total Hari Ini (Semua Shift)</div>
+          <div id="dailyTotal" class="bottom-value">0</div>
+          <div class="status-sub">Termasuk shift yang sedang berjalan.</div>
+        </div>
       </div>
 
-      <div class="card">
-        <div class="target-header">
-          <h3>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-              <circle cx="12" cy="12" r="10"></circle>
-              <circle cx="12" cy="12" r="6"></circle>
-              <circle cx="12" cy="12" r="2"></circle>
-            </svg>
-            Target Produksi
-          </h3>
-          <button id="btnEditTarget" class="btn btn-ghost btn-sm" type="button">Edit Target</button>
+      <!-- Kolom kanan: Target Produksi + Shift Berikutnya -->
+      <div class="main-col-right">
+        <div class="card target-card">
+          <div class="target-header">
+            <h3>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                <circle cx="12" cy="12" r="10"></circle>
+                <circle cx="12" cy="12" r="6"></circle>
+                <circle cx="12" cy="12" r="2"></circle>
+              </svg>
+              Target Produksi
+            </h3>
+            <div id="targetActionsView">
+              <button id="btnEditTarget" class="btn btn-ghost btn-sm" type="button">Edit Target</button>
+            </div>
+            <div id="targetActionsEdit" class="target-actions-edit hidden">
+              <button id="btnSaveTarget" class="btn btn-success btn-sm" type="button">✓ Simpan</button>
+              <button id="btnCancelEdit" class="btn btn-ghost btn-sm" type="button">✕ Batal</button>
+            </div>
+          </div>
+
+          <!-- Form edit inline -->
+          <div id="targetEditForm" class="target-edit-form hidden">
+            <p class="target-edit-hint">
+              Atur laju target: <strong id="hintPcs">5</strong> pcs setiap <strong id="hintSec">10</strong> detik
+            </p>
+            <div class="target-rate-inputs">
+              <div class="rate-field">
+                <label for="inpPcsPerInterval">PCS</label>
+                <input id="inpPcsPerInterval" type="number" min="1" step="1" value="5">
+              </div>
+              <div class="rate-field">
+                <label for="inpIntervalSeconds">DETIK</label>
+                <input id="inpIntervalSeconds" type="number" min="1" step="1" value="10">
+              </div>
+            </div>
+            <p class="target-preview">Preview — <span id="previewPerHour">1.800</span> pcs/jam</p>
+          </div>
+
+          <div class="target-grid">
+            <div class="target-item">
+              <div class="label">Target / Jam</div>
+              <div class="value green"><span id="targetPerHour">-</span> <span class="unit">pcs</span></div>
+            </div>
+            <div class="target-item">
+              <div class="label">Target / Shift (<span id="shiftHours">-</span>h)</div>
+              <div class="value green"><span id="targetPerShift">-</span> <span class="unit">pcs</span></div>
+            </div>
+            <div class="target-item">
+              <div class="label">Laju Saat Ini</div>
+              <div class="value"><span id="currentRate">-</span> <span class="unit">pcs/jam</span></div>
+            </div>
+            <div class="target-item">
+              <div class="label">Proyeksi Akhir Shift</div>
+              <div class="value" id="projectionWrap"><span id="projection">-</span> <span class="unit">pcs (est.)</span></div>
+            </div>
+          </div>
+
+          <div class="progress-section">
+            <div class="progress-header">
+              <span>Progress terhadap target shift</span>
+              <span><span id="progressPercent">0</span>%</span>
+            </div>
+            <div class="progress-bar">
+              <div id="progressFill" class="progress-fill"></div>
+            </div>
+            <div class="progress-scale">
+              <span>0</span>
+              <span id="progressMax">-</span>
+            </div>
+          </div>
+
+          <div id="alertBox" class="alert-box hidden">
+            <svg id="alertIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"></svg>
+            <div id="alertText">-</div>
+          </div>
+
+          <div class="target-footer">Laju target: <span id="rateLabel">-</span></div>
         </div>
 
-        <div class="target-grid">
-          <div class="target-item">
-            <div class="label">Target / Jam</div>
-            <div class="value green"><span id="targetPerHour">-</span> <span style="font-size:0.9rem;color:var(--text-muted);font-weight:600;">pcs</span></div>
-          </div>
-          <div class="target-item">
-            <div class="label">Target / Shift (<span id="shiftHours">-</span>h)</div>
-            <div class="value green"><span id="targetPerShift">-</span> <span style="font-size:0.9rem;color:var(--text-muted);font-weight:600;">pcs</span></div>
-          </div>
-          <div class="target-item">
-            <div class="label">Laju Saat Ini</div>
-            <div class="value"><span id="currentRate">-</span> <span style="font-size:0.9rem;color:var(--text-muted);font-weight:600;">pcs/jam</span></div>
-          </div>
-          <div class="target-item">
-            <div class="label">Proyeksi Akhir Shift</div>
-            <div class="value red"><span id="projection">-</span> <span style="font-size:0.9rem;color:var(--text-muted);font-weight:600;">pcs (est.)</span></div>
-          </div>
+        <div class="card next-shift-card">
+          <div class="card-label">Shift Berikutnya</div>
+          <div id="nextShiftName" class="status-value" style="font-size: 1.35rem;">-</div>
+          <div class="status-sub">Dimulai pukul <span id="nextShiftStart">-</span></div>
         </div>
-
-        <div class="progress-section">
-          <div class="progress-header">
-            <span>Progress terhadap target shift</span>
-            <span><span id="progressPercent">0</span>%</span>
-          </div>
-          <div class="progress-bar">
-            <div id="progressFill" class="progress-fill"></div>
-          </div>
-        </div>
-
-        <div id="alertBox" class="alert-box hidden">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
-            <path d="M12 9v4"></path>
-            <path d="M12 17h.01"></path>
-          </svg>
-          <div id="alertText">-</div>
-        </div>
-
-        <div class="target-footer">Laju target: <span id="rateLabel">-</span></div>
       </div>
     </section>
-
-    <section class="bottom-row">
-      <div class="card">
-        <div class="card-label">Total Hari Ini (Semua Shift)</div>
-        <div id="dailyTotal" class="bottom-value">0</div>
-        <div class="status-sub">Termasuk shift yang sedang berjalan.</div>
-      </div>
-      <div class="card">
-        <div class="card-label">Shift Berikutnya</div>
-        <div id="nextShiftName" class="status-value" style="font-size: 1.35rem;">-</div>
-        <div class="status-sub">Dimulai pukul <span id="nextShiftStart">-</span></div>
-      </div>
-    </section>
-  </div>
-
-  <!-- Modal Edit Target -->
-  <div id="modalOverlay" class="modal-overlay" role="dialog" aria-modal="true">
-    <div class="modal">
-      <h3>Edit Target Produksi</h3>
-      <div class="form-group">
-        <label for="inpTargetPerHour">Target per jam (pcs)</label>
-        <input id="inpTargetPerHour" type="number" min="1" step="1" placeholder="Contoh: 1800">
-      </div>
-      <div class="form-group">
-        <label for="inpPcsPerInterval">Laju target (pcs)</label>
-        <input id="inpPcsPerInterval" type="number" min="1" step="1" placeholder="Contoh: 5">
-      </div>
-      <div class="form-group">
-        <label for="inpIntervalSeconds">Per (detik)</label>
-        <input id="inpIntervalSeconds" type="number" min="1" step="1" placeholder="Contoh: 10">
-      </div>
-      <div class="modal-actions">
-        <button id="btnCancelModal" class="btn btn-ghost" type="button">Batal</button>
-        <button id="btnSaveTarget" class="btn btn-primary" type="button">Simpan</button>
-      </div>
-    </div>
   </div>
 
   <script src="/socket.io/socket.io.js"></script>

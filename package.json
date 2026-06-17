@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js",
-    "simulate": "node simulators/iot-simulator.js"
+    "simulate": "node simulators/iot-simulator.js",
+    "seed:demo": "node scripts/seed-demo-history.js"
   },
   "dependencies": {
     "dotenv": "^16.4.7",

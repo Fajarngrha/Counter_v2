@@ -1,6 +1,6 @@
 const mqtt = require('mqtt');
 const config = require('../config');
-const { incrementCounter, applyDeviceCounter, updateIotSeen } = require('./counterService');
+const { applyDeviceCounter } = require('./counterService');
 
 let client = null;
 let connected = false;
@@ -40,11 +40,18 @@ function parseSensorPayload(raw) {
 function initMqtt(broadcast) {
   broadcastFn = broadcast;
 
-  client = mqtt.connect(config.mqtt.brokerUrl, {
+  const options = {
     clientId: config.mqtt.clientId,
     reconnectPeriod: 5000,
     connectTimeout: 10000,
-  });
+  };
+
+  if (config.mqtt.username) {
+    options.username = config.mqtt.username;
+    options.password = config.mqtt.password;
+  }
+
+  client = mqtt.connect(config.mqtt.brokerUrl, options);
 
   client.on('connect', () => {
     connected = true;
@@ -89,16 +96,8 @@ function isMqttConnected() {
   return connected;
 }
 
-function manualIncrement(amount = 1) {
-  const data = incrementCounter(amount);
-  updateIotSeen();
-  if (broadcastFn) broadcastFn(data);
-  return data;
-}
-
 module.exports = {
   initMqtt,
   publishIncrement,
   isMqttConnected,
-  manualIncrement,
 };

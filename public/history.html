@@ -9,40 +9,86 @@
 <body>
   <div class="history-page">
     <header class="history-header">
-      <div class="dashboard-title">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"></path>
-        </svg>
-        <span>Riwayat Produksi</span>
+      <div>
+        <div class="dashboard-title">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"></path>
+          </svg>
+          <span>Riwayat Produksi</span>
+        </div>
+        <p class="history-subtitle">Log pencapaian per shift</p>
       </div>
       <div class="header-actions">
+        <button id="btnExport" class="btn btn-ghost btn-sm" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="7 10 12 15 17 10"></polyline>
+            <line x1="12" y1="15" x2="12" y2="3"></line>
+          </svg>
+          Export CSV
+        </button>
         <a class="btn btn-ghost btn-sm" href="/dashboard">Kembali</a>
         <button id="btnLogout" class="btn btn-ghost btn-sm" type="button">Keluar</button>
       </div>
     </header>
 
+    <section class="summary-row">
+      <div class="card summary-card">
+        <div class="summary-label">TOTAL RECORD</div>
+        <div id="sumRecords" class="summary-value">0</div>
+        <div class="summary-sub">shift tercatat</div>
+      </div>
+      <div class="card summary-card">
+        <div class="summary-label">TOTAL BARANG</div>
+        <div id="sumBarang" class="summary-value">0</div>
+        <div class="summary-sub">pcs (filtered)</div>
+      </div>
+      <div class="card summary-card">
+        <div class="summary-label">TOTAL TARGET</div>
+        <div id="sumTarget" class="summary-value summary-green">0</div>
+        <div class="summary-sub">pcs (filtered)</div>
+      </div>
+      <div class="card summary-card">
+        <div class="summary-label">PENCAPAIAN KESELURUHAN</div>
+        <div id="sumAchievement" class="summary-value">0%</div>
+        <div class="mini-progress-bar">
+          <div id="sumAchievementFill" class="mini-progress-fill"></div>
+        </div>
+      </div>
+    </section>
+
     <div class="card">
-      <div class="filter-bar">
-        <div class="form-group">
-          <label for="startDate">Dari tanggal</label>
-          <input id="startDate" type="date">
+      <div class="history-filter-bar">
+        <div class="search-wrap">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8"></circle>
+            <path d="m21 21-4.3-4.3"></path>
+          </svg>
+          <input id="searchInput" type="search" placeholder="Cari...">
         </div>
-        <div class="form-group">
-          <label for="endDate">Sampai tanggal</label>
-          <input id="endDate" type="date">
-        </div>
-        <button id="btnApply" class="btn btn-primary" type="button" style="width:auto;">Terapkan</button>
+        <input id="startDate" type="date" class="date-input">
+        <input id="endDate" type="date" class="date-input">
+        <select id="shiftFilter" class="shift-select">
+          <option value="all">Semua Shift</option>
+          <option value="Shift 1">Shift 1</option>
+          <option value="Shift 2">Shift 2</option>
+          <option value="Shift 3">Shift 3</option>
+        </select>
+        <button id="btnApply" class="btn btn-primary btn-sm" type="button" style="width:auto;">Terapkan</button>
       </div>
 
       <div id="tableWrap">
-        <table class="data-table">
+        <table class="data-table history-table">
           <thead>
             <tr>
-              <th>ID</th>
               <th>Tanggal</th>
               <th>Shift</th>
               <th>Total Barang</th>
-              <th>Timestamp Saved</th>
+              <th>Target / Jam</th>
+              <th>Target / Shift</th>
+              <th>Pencapaian</th>
+              <th>Progress</th>
+              <th>Disimpan Pada</th>
             </tr>
           </thead>
           <tbody id="tbody"></tbody>
@@ -50,7 +96,7 @@
       </div>
 
       <div id="emptyState" class="empty-state" style="display:none;">
-        Tidak ada data pada rentang tanggal ini.
+        Tidak ada data pada filter ini.
       </div>
     </div>
   </div>
@@ -58,4 +104,3 @@
   <script src="/js/history.js"></script>
 </body>
 </html>
-

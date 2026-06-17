@@ -6,16 +6,101 @@
       "shift": "Shift 1",
       "total_barang": 0,
       "timestamp_saved": "2026-06-16T13:12:37.290Z"
+    },
+    {
+      "id": 2,
+      "tanggal": "2026-06-10",
+      "shift": "Shift 3",
+      "total_barang": 1180,
+      "target_per_hour": 1800,
+      "target_per_shift": 14400,
+      "pcs_per_interval": 5,
+      "interval_seconds": 10,
+      "shift_duration_hours": 8,
+      "timestamp_saved": "2026-06-10T16:00:05.000Z"
+    },
+    {
+      "id": 3,
+      "tanggal": "2026-06-10",
+      "shift": "Shift 2",
+      "total_barang": 998,
+      "target_per_hour": 1800,
+      "target_per_shift": 12600,
+      "pcs_per_interval": 5,
+      "interval_seconds": 10,
+      "shift_duration_hours": 7,
+      "timestamp_saved": "2026-06-10T09:00:03.000Z"
+    },
+    {
+      "id": 4,
+      "tanggal": "2026-06-10",
+      "shift": "Shift 1",
+      "total_barang": 1420,
+      "target_per_hour": 1800,
+      "target_per_shift": 16200,
+      "pcs_per_interval": 5,
+      "interval_seconds": 10,
+      "shift_duration_hours": 9,
+      "timestamp_saved": "2026-06-10T02:00:02.000Z"
+    },
+    {
+      "id": 5,
+      "tanggal": "2026-06-09",
+      "shift": "Shift 3",
+      "total_barang": 1245,
+      "target_per_hour": 1800,
+      "target_per_shift": 14400,
+      "pcs_per_interval": 5,
+      "interval_seconds": 10,
+      "shift_duration_hours": 8,
+      "timestamp_saved": "2026-06-09T16:00:04.000Z"
+    },
+    {
+      "id": 6,
+      "tanggal": "2026-06-09",
+      "shift": "Shift 2",
+      "total_barang": 1131,
+      "target_per_hour": 1800,
+      "target_per_shift": 12600,
+      "pcs_per_interval": 5,
+      "interval_seconds": 10,
+      "shift_duration_hours": 7,
+      "timestamp_saved": "2026-06-09T09:00:01.000Z"
+    },
+    {
+      "id": 7,
+      "tanggal": "2026-06-09",
+      "shift": "Shift 1",
+      "total_barang": 1580,
+      "target_per_hour": 1800,
+      "target_per_shift": 16200,
+      "pcs_per_interval": 5,
+      "interval_seconds": 10,
+      "shift_duration_hours": 9,
+      "timestamp_saved": "2026-06-09T02:00:06.000Z"
+    },
+    {
+      "id": 8,
+      "tanggal": "2026-06-08",
+      "shift": "Shift 3",
+      "total_barang": 1321,
+      "target_per_hour": 1800,
+      "target_per_shift": 14400,
+      "pcs_per_interval": 5,
+      "interval_seconds": 10,
+      "shift_duration_hours": 8,
+      "timestamp_saved": "2026-06-08T16:00:05.000Z"
     }
   ],
   "current_state": {
     "shift": "Shift 2",
-    "shift_date": "2026-06-16",
-    "count": 0,
-    "daily_total": 0,
-    "daily_date": "2026-06-16",
-    "last_iot_seen": null,
-    "updated_at": "2026-06-16T13:12:37.290Z"
+    "shift_date": "2026-06-17",
+    "count": 194,
+    "daily_total": 194,
+    "daily_date": "2026-06-17",
+    "last_iot_seen": "2026-06-17T13:34:59.204Z",
+    "updated_at": "2026-06-17T13:34:59.204Z",
+    "last_device_time": "2026-06-17 17:11:41"
   },
   "production_target": {
     "target_per_hour": 1800,
@@ -23,6 +108,7 @@
     "interval_seconds": 10
   },
   "_meta": {
-    "last_history_id": 1
+    "last_history_id": 8,
+    "demo_seeded": true
   }
 }

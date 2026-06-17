@@ -5,7 +5,7 @@ const http = require('http');
 const { Server } = require('socket.io');
 const config = require('./config');
 const { initCounter, handleShiftBoundary, getDashboardData } = require('./services/counterService');
-const { initMqtt, manualIncrement } = require('./services/mqttService');
+const { initMqtt } = require('./services/mqttService');
 const { getHistory, getTarget, updateTarget } = require('./db/database');
 
 const app = express();
@@ -52,15 +52,12 @@ app.get('/api/dashboard', requireAuth, (req, res) => {
   res.json(getDashboardData());
 });
 
-app.post('/api/increment', requireAuth, (req, res) => {
-  const amount = parseInt(req.body.amount, 10) || 1;
-  res.json(manualIncrement(amount));
-});
-
 app.get('/api/history', requireAuth, (req, res) => {
   const end = req.query.end || new Date().toISOString().slice(0, 10);
   const start = req.query.start || end;
-  res.json(getHistory(start, end));
+  const shift = req.query.shift || 'all';
+  const search = req.query.search || '';
+  res.json(getHistory(start, end, { shift, search }));
 });
 
 app.get('/api/target', requireAuth, (req, res) => {

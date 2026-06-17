@@ -155,6 +155,14 @@ function isAtBoundary(wib, lastCheckMin) {
   return { crossed: false, boundaryMin: nowMin };
 }
 
+function getShiftByName(name) {
+  return SHIFTS.find((s) => s.name === name) || SHIFTS[0];
+}
+
+function getShiftDurationHours(shiftName) {
+  return getShiftByName(shiftName).durationHours;
+}
+
 module.exports = {
   SHIFTS,
   getWIBParts,
@@ -167,4 +175,6 @@ module.exports = {
   padTime,
   isAtBoundary,
   formatDateISO,
+  getShiftByName,
+  getShiftDurationHours,
 };

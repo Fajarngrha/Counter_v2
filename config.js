@@ -7,6 +7,8 @@ module.exports = {
     brokerUrl: process.env.MQTT_BROKER_URL || 'mqtt://localhost:1883',
     topic: process.env.MQTT_TOPIC || 'iot/counter/increment',
     clientId: process.env.MQTT_CLIENT_ID || 'iot-counter-server',
+    username: process.env.MQTT_USERNAME || undefined,
+    password: process.env.MQTT_PASSWORD || undefined,
   },
   auth: {
     username: process.env.ADMIN_USERNAME || 'admin',
