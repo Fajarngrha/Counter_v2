@@ -4,10 +4,17 @@ function fmtNumber(n) {
   return new Intl.NumberFormat('id-ID').format(n || 0);
 }
 
-async function fetchJson(url, opts) {
-  const res = await fetch(url, opts);
+async function fetchJson(url, opts = {}) {
+  const res = await fetch(url, {
+    credentials: 'same-origin',
+    ...opts,
+  });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || 'Request gagal');
+  if (!res.ok) {
+    const err = new Error(data.error || 'Request gagal');
+    err.status = res.status;
+    throw err;
+  }
   return data;
 }
 
@@ -30,13 +37,16 @@ async function putJson(url, body) {
 const el = (id) => document.getElementById(id);
 
 const counterValueEl = el('counterValue');
+const counterTargetValueEl = el('counterTargetValue');
 const progressFillEl = el('progressFill');
 const alertBoxEl = el('alertBox');
 const alertIconEl = el('alertIcon');
 const projectionWrapEl = el('projectionWrap');
 
 let lastCounter = null;
+let lastTargetTickerValue = null;
 let latestDashboardData = null;
+let targetTickerState = null;
 
 function loadTargetFromStorage() {
   try {
@@ -74,6 +84,47 @@ function pulseCounter() {
   setTimeout(() => counterValueEl.classList.remove('pulse'), 150);
 }
 
+function calcLiveIntervalTarget(state) {
+  if (!state?.pcsPerInterval || !state?.intervalSeconds) return 0;
+
+  const elapsed = state.elapsedSeconds + (Date.now() - state.syncedAt) / 1000;
+  const intervals = Math.floor(elapsed / state.intervalSeconds);
+  const value = intervals * state.pcsPerInterval;
+  const max = state.targetPerShift || value;
+  return Math.min(value, max);
+}
+
+function syncTargetTickerState(data) {
+  targetTickerState = {
+    pcsPerInterval: data.target?.pcsPerInterval,
+    intervalSeconds: data.target?.intervalSeconds,
+    targetPerShift: data.target?.perShift,
+    elapsedSeconds: data.progress?.elapsedSeconds ?? 0,
+    syncedAt: Date.now(),
+  };
+  updateTargetTickerDisplay();
+}
+
+function updateTargetTickerDisplay() {
+  if (!targetTickerState) return;
+
+  const value = calcLiveIntervalTarget(targetTickerState);
+  const { pcsPerInterval, intervalSeconds, targetPerShift } = targetTickerState;
+
+  counterTargetValueEl.textContent = fmtNumber(value);
+  // el('counterTargetRate').textContent = `+${pcsPerInterval} pcs / ${intervalSeconds} dtk`;
+  // el('counterTargetMax').textContent = `dari ${fmtNumber(targetPerShift)} pcs shift`;
+
+  const reachedMax = value >= targetPerShift;
+  counterTargetValueEl.classList.toggle('counter-target-value--max', reachedMax);
+
+  if (lastTargetTickerValue !== null && value > lastTargetTickerValue) {
+    counterTargetValueEl.classList.add('pulse');
+    setTimeout(() => counterTargetValueEl.classList.remove('pulse'), 150);
+  }
+  lastTargetTickerValue = value;
+}
+
 function updatePreview() {
   const pcs = parseInt(el('inpPcsPerInterval').value, 10) || 0;
   const sec = parseInt(el('inpIntervalSeconds').value, 10) || 0;
@@ -89,6 +140,8 @@ function setEditMode(active) {
 }
 
 function renderDifferenceIndicator(analytics) {
+  if (!alertBoxEl || !alertIconEl) return;
+
   const behind = analytics?.behind || 0;
   const ahead = analytics?.ahead || 0;
   const expected = analytics?.expectedByNow || 0;
@@ -102,9 +155,9 @@ function renderDifferenceIndicator(analytics) {
       <path d="M12 9v4"></path>
       <path d="M12 17h.01"></path>
     `;
-    el('alertText').textContent =
-      `Tertinggal ${fmtNumber(behind)} pcs dari ekspektasi waktu saat ini (${fmtNumber(expected)} pcs)`;
-    return;
+    // el('alertText').textContent =
+    //   `Tertinggal ${fmtNumber(behind)} pcs dari ekspektasi waktu saat ini (${fmtNumber(expected)} pcs)`;
+    // return;
   }
 
   if (ahead > 0) {
@@ -126,7 +179,7 @@ function renderDifferenceIndicator(analytics) {
     <path d="M12 8v4"></path>
     <path d="M12 16h.01"></path>
   `;
-  el('alertText').textContent = `Sesuai ekspektasi waktu saat ini (${fmtNumber(expected)} pcs)`;
+  el('alertText').textContent = `Sesuai waktu saat ini (${fmtNumber(expected)} pcs)`;
 }
 
 function render(data) {
@@ -182,6 +235,7 @@ function render(data) {
   el('nextShiftStart').textContent = data.nextShift?.startTime || '-';
 
   renderDifferenceIndicator(data.analytics);
+  syncTargetTickerState(data);
 }
 
 async function syncTargetToServer(pcsPerInterval, intervalSeconds) {
@@ -220,14 +274,40 @@ async function init() {
   const initial = await fetchJson('/api/dashboard');
   render(initial);
 
-  const socket = io();
-  socket.on('dashboard:update', (data) => {
-    render(data);
-  });
+  setInterval(updateTargetTickerDisplay, 1000);
+
+  if (typeof io === 'function') {
+    const socket = io();
+    socket.on('dashboard:update', (data) => {
+      render(data);
+    });
+  } else {
+    console.warn('Socket.io tidak tersedia — dashboard tetap jalan tanpa update real-time.');
+  }
 
   el('btnLogout').addEventListener('click', async () => {
     await postJson('/api/logout', {});
     window.location.href = '/';
+  });
+
+  el('btnResetCounter').addEventListener('click', async () => {
+    const current = latestDashboardData?.counter || 0;
+    const shiftName = latestDashboardData?.shift?.name || 'shift ini';
+    const message = current > 0
+      ? `Reset counter ${shiftName} dari ${fmtNumber(current)} ke 0?\n\nData shift akan disimpan ke riwayat sebelum di-reset.`
+      : `Reset counter ${shiftName} ke 0?`;
+
+    if (!confirm(message)) return;
+
+    try {
+      el('btnResetCounter').disabled = true;
+      const data = await postJson('/api/counter/reset', {});
+      render(data);
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      el('btnResetCounter').disabled = false;
+    }
   });
 
   el('inpPcsPerInterval').addEventListener('input', updatePreview);
@@ -280,6 +360,8 @@ async function init() {
 }
 
 init().catch((e) => {
-  console.error(e);
-  window.location.href = '/';
+  console.error('Dashboard init error:', e);
+  if (e.status === 401 || e.message === 'Unauthorized') {
+    window.location.href = '/';
+  }
 });

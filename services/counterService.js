@@ -21,6 +21,7 @@ const {
 let lastBoundaryMin = -1;
 let shiftStartCount = 0;
 let shiftStartTime = null;
+let resetGraceUntil = 0;
 
 function saveShiftRecord(tanggal, shift, totalBarang) {
   const target = buildTargetSnapshot(getTarget(), shift);
@@ -156,10 +157,19 @@ function applyDeviceCounter(deviceCounter, deviceTime) {
   const parsed = Number(deviceCounter);
   const nextCounter = Number.isFinite(parsed) && parsed >= 0 ? Math.floor(parsed) : count;
 
-  // Lindungi dari paket out-of-order yang menurunkan nilai counter.
-  const safeCounter = Math.max(count, nextCounter);
-  const delta = safeCounter - count;
+  let safeCounter;
+  if (Date.now() < resetGraceUntil) {
+    // Setelah reset manual, abaikan paket stale dari sebelum hardware di-reset.
+    if (nextCounter > count) {
+      return getDashboardData();
+    }
+    safeCounter = nextCounter;
+  } else {
+    // Lindungi dari paket out-of-order yang menurunkan nilai counter.
+    safeCounter = Math.max(count, nextCounter);
+  }
 
+  const delta = safeCounter - count;
   count = safeCounter;
   dailyTotal += delta;
 
@@ -171,6 +181,43 @@ function applyDeviceCounter(deviceCounter, deviceTime) {
     daily_date: dailyDate,
     last_iot_seen: new Date().toISOString(),
     last_device_time: deviceTime || null,
+  });
+
+  return getDashboardData();
+}
+
+function resetCounter() {
+  const state = getState();
+  const shift = getCurrentShift();
+  const shiftDate = getShiftDate(shift, shift.wib);
+  const today = formatDateISO(shift.wib);
+  const prevCount = state.count;
+
+  if (prevCount > 0) {
+    saveShiftRecord(state.shift_date, state.shift, prevCount);
+  }
+
+  let dailyTotal = state.daily_total;
+  let dailyDate = state.daily_date;
+
+  if (dailyDate !== today) {
+    dailyTotal = 0;
+    dailyDate = today;
+  } else if (prevCount > 0) {
+    dailyTotal = Math.max(0, dailyTotal - prevCount);
+  }
+
+  resetGraceUntil = Date.now() + 30000;
+  shiftStartCount = 0;
+  shiftStartTime = Date.now();
+
+  updateState({
+    shift: shift.name,
+    shift_date: shiftDate,
+    count: 0,
+    daily_total: dailyTotal,
+    daily_date: dailyDate,
+    last_iot_seen: new Date().toISOString(),
   });
 
   return getDashboardData();
@@ -221,6 +268,15 @@ function getDashboardData() {
     : 0;
 
   const expectedByNow = Math.round(targetPerShift * progress.fraction);
+  const elapsedSeconds = Math.floor(progress.elapsedMinutes * 60);
+  const totalSeconds = Math.floor(progress.totalMinutes * 60);
+  const intervalCount = target.interval_seconds > 0
+    ? Math.floor(elapsedSeconds / target.interval_seconds)
+    : 0;
+  const targetByInterval = Math.min(
+    intervalCount * target.pcs_per_interval,
+    targetPerShift
+  );
   const behind = expectedByNow - state.count;
   const progressPercent = targetPerShift > 0
     ? Math.min(100, Math.round((state.count / targetPerShift) * 100))
@@ -256,6 +312,14 @@ function getDashboardData() {
       intervalSeconds: target.interval_seconds,
       rateLabel: `${target.pcs_per_interval} pcs / ${target.interval_seconds} detik`,
     },
+    progress: {
+      elapsedSeconds,
+      totalSeconds,
+    },
+    targetTicker: {
+      value: targetByInterval,
+      max: targetPerShift,
+    },
     analytics: {
       currentRate,
       projection,
@@ -274,6 +338,7 @@ module.exports = {
   handleShiftBoundary,
   incrementCounter,
   applyDeviceCounter,
+  resetCounter,
   updateIotSeen,
   getDashboardData,
 };

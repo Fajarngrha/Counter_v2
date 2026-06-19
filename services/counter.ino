@@ -5,10 +5,11 @@
 
 const char* ssid = "ARRAZKA 2 LANTAI 2";
 const char* password = "Razka1109";
-const char* mqtt_server = "192.168.0.104";
+const char* mqtt_server = "172.20.10.2";
 const int mqtt_port = 1883;
 
 const char* mqtt_topic = "iot/counter/increment";
+const char* mqtt_topic_command = "iot/counter/command";
 
 const int pinRelay = 5;
 
@@ -27,6 +28,8 @@ WiFiClient espClient;
 PubSubClient client(espClient);
 
 unsigned long lastMqttReconnectAttempt = 0;
+
+String getRtcTimestamp();
 
 void IRAM_ATTR hitungBarang() {
   unsigned long currentTime = millis();
@@ -64,12 +67,50 @@ bool reconnectMqtt() {
 
   if (client.connect(clientId.c_str())) {
     Serial.println(" Berhasil Terhubung ke Broker!");
+    client.subscribe(mqtt_topic_command);
+    Serial.print("Subscribe ke: ");
+    Serial.println(mqtt_topic_command);
     return true;
   }
 
   Serial.print(" Gagal, status=");
   Serial.println(client.state());
   return false;
+}
+
+void publishCounterSnapshot() {
+  if (!client.connected()) return;
+
+  unsigned long snapshotCounter;
+  portENTER_CRITICAL(&mux);
+  snapshotCounter = totalCounter;
+  portEXIT_CRITICAL(&mux);
+
+  String waktu = getRtcTimestamp();
+  String payload = "[{\"waktu\":\"" + waktu + "\",\"counter\":" + String(snapshotCounter) + "}]";
+
+  if (client.publish(mqtt_topic, payload.c_str())) {
+    lastCounterSent = snapshotCounter;
+    Serial.print("Snapshot counter dikirim: ");
+    Serial.println(payload);
+  }
+}
+
+void mqttCallback(char* topic, byte* payload, unsigned int length) {
+  String message;
+  for (unsigned int i = 0; i < length; i++) {
+    message += (char)payload[i];
+  }
+
+  message.toLowerCase();
+  if (message.indexOf("reset") >= 0) {
+    portENTER_CRITICAL(&mux);
+    totalCounter = 0;
+    portEXIT_CRITICAL(&mux);
+    lastCounterSent = 0;
+    Serial.println("Counter di-reset ke 0 via MQTT");
+    publishCounterSnapshot();
+  }
 }
 
 void initRtc() {
@@ -108,6 +149,7 @@ void setup() {
 
   setup_wifi();
   client.setServer(mqtt_server, mqtt_port);
+  client.setCallback(mqttCallback);
 
   pinMode(pinRelay, INPUT_PULLUP);
   attachInterrupt(digitalPinToInterrupt(pinRelay), hitungBarang, FALLING);

@@ -12,7 +12,7 @@ function fmtNumber(n) {
 }
 
 async function fetchJson(url) {
-  const res = await fetch(url);
+  const res = await fetch(url, { credentials: 'same-origin' });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || 'Request gagal');
   return data;
@@ -21,6 +21,7 @@ async function fetchJson(url) {
 async function postJson(url, body) {
   const res = await fetch(url, {
     method: 'POST',
+    credentials: 'same-origin',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });

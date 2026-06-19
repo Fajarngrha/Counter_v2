@@ -4,8 +4,8 @@ const path = require('path');
 const http = require('http');
 const { Server } = require('socket.io');
 const config = require('./config');
-const { initCounter, handleShiftBoundary, getDashboardData } = require('./services/counterService');
-const { initMqtt } = require('./services/mqttService');
+const { initCounter, handleShiftBoundary, getDashboardData, resetCounter } = require('./services/counterService');
+const { initMqtt, publishDeviceReset } = require('./services/mqttService');
 const { getHistory, getTarget, updateTarget } = require('./db/database');
 
 const app = express();
@@ -19,7 +19,11 @@ app.use(
     secret: config.sessionSecret,
     resave: false,
     saveUninitialized: false,
-    cookie: { maxAge: 24 * 60 * 60 * 1000 },
+    cookie: {
+      maxAge: 24 * 60 * 60 * 1000,
+      httpOnly: true,
+      sameSite: 'lax',
+    },
   })
 );
 
@@ -38,7 +42,13 @@ app.post('/api/login', (req, res) => {
   if (username === config.auth.username && password === config.auth.password) {
     req.session.authenticated = true;
     req.session.username = username;
-    return res.json({ success: true });
+    return req.session.save((err) => {
+      if (err) {
+        console.error('[Session] Gagal menyimpan session:', err.message);
+        return res.status(500).json({ error: 'Gagal menyimpan session' });
+      }
+      return res.json({ success: true });
+    });
   }
   res.status(401).json({ error: 'Username atau password salah' });
 });
@@ -62,6 +72,13 @@ app.get('/api/history', requireAuth, (req, res) => {
 
 app.get('/api/target', requireAuth, (req, res) => {
   res.json(getTarget());
+});
+
+app.post('/api/counter/reset', requireAuth, (req, res) => {
+  publishDeviceReset();
+  const data = resetCounter();
+  broadcastDashboard(data);
+  res.json(data);
 });
 
 app.put('/api/target', requireAuth, (req, res) => {

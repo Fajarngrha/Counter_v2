@@ -92,6 +92,15 @@ function publishIncrement(amount = 1) {
   }
 }
 
+function publishDeviceReset() {
+  if (!client || !connected) return false;
+
+  const topic = config.mqtt.commandTopic;
+  client.publish(topic, JSON.stringify({ action: 'reset' }));
+  console.log(`[MQTT] Perintah reset dikirim ke ${topic}`);
+  return true;
+}
+
 function isMqttConnected() {
   return connected;
 }
@@ -99,5 +108,6 @@ function isMqttConnected() {
 module.exports = {
   initMqtt,
   publishIncrement,
+  publishDeviceReset,
   isMqttConnected,
 };
