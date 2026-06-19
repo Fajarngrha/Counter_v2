@@ -135,6 +135,8 @@ function readDb() {
         daily_date: today,
         last_iot_seen: null,
         last_device_time: null,
+        last_device_counter: null,
+        device_offset: 0,
         updated_at: nowIso(),
       },
       production_target: {
@@ -265,6 +267,8 @@ function getState() {
   const data = readDb();
   return {
     last_device_time: null,
+    last_device_counter: null,
+    device_offset: 0,
     ...data.current_state,
   };
 }

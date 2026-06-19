@@ -126,25 +126,135 @@
       "interval_seconds": 5,
       "shift_duration_hours": 9,
       "timestamp_saved": "2026-06-19T01:49:46.337Z"
+    },
+    {
+      "id": 12,
+      "tanggal": "2026-06-19",
+      "shift": "Shift 1",
+      "total_barang": 17,
+      "target_per_hour": 3600,
+      "target_per_shift": 32400,
+      "pcs_per_interval": 5,
+      "interval_seconds": 5,
+      "shift_duration_hours": 9,
+      "timestamp_saved": "2026-06-19T04:09:14.791Z"
+    },
+    {
+      "id": 13,
+      "tanggal": "2026-06-19",
+      "shift": "Shift 1",
+      "total_barang": 27,
+      "target_per_hour": 3600,
+      "target_per_shift": 32400,
+      "pcs_per_interval": 5,
+      "interval_seconds": 5,
+      "shift_duration_hours": 9,
+      "timestamp_saved": "2026-06-19T04:09:53.734Z"
+    },
+    {
+      "id": 14,
+      "tanggal": "2026-06-19",
+      "shift": "Shift 1",
+      "total_barang": 82,
+      "target_per_hour": 3600,
+      "target_per_shift": 32400,
+      "pcs_per_interval": 5,
+      "interval_seconds": 5,
+      "shift_duration_hours": 9,
+      "timestamp_saved": "2026-06-19T04:11:42.660Z"
+    },
+    {
+      "id": 15,
+      "tanggal": "2026-06-19",
+      "shift": "Shift 1",
+      "total_barang": 3,
+      "target_per_hour": 3600,
+      "target_per_shift": 32400,
+      "pcs_per_interval": 5,
+      "interval_seconds": 5,
+      "shift_duration_hours": 9,
+      "timestamp_saved": "2026-06-19T06:25:05.784Z"
+    },
+    {
+      "id": 16,
+      "tanggal": "2026-06-19",
+      "shift": "Shift 1",
+      "total_barang": 5,
+      "target_per_hour": 3600,
+      "target_per_shift": 32400,
+      "pcs_per_interval": 5,
+      "interval_seconds": 5,
+      "shift_duration_hours": 9,
+      "timestamp_saved": "2026-06-19T06:25:27.779Z"
+    },
+    {
+      "id": 17,
+      "tanggal": "2026-06-19",
+      "shift": "Shift 1",
+      "total_barang": 18,
+      "target_per_hour": 3600,
+      "target_per_shift": 32400,
+      "pcs_per_interval": 5,
+      "interval_seconds": 5,
+      "shift_duration_hours": 9,
+      "timestamp_saved": "2026-06-19T06:25:44.582Z"
+    },
+    {
+      "id": 18,
+      "tanggal": "2026-06-19",
+      "shift": "Shift 1",
+      "total_barang": 2,
+      "target_per_hour": 3600,
+      "target_per_shift": 32400,
+      "pcs_per_interval": 5,
+      "interval_seconds": 5,
+      "shift_duration_hours": 9,
+      "timestamp_saved": "2026-06-19T07:31:37.998Z"
+    },
+    {
+      "id": 19,
+      "tanggal": "2026-06-19",
+      "shift": "Shift 1",
+      "total_barang": 6,
+      "target_per_hour": 3600,
+      "target_per_shift": 32400,
+      "pcs_per_interval": 5,
+      "interval_seconds": 5,
+      "shift_duration_hours": 9,
+      "timestamp_saved": "2026-06-19T07:34:00.345Z"
+    },
+    {
+      "id": 20,
+      "tanggal": "2026-06-19",
+      "shift": "Shift 1",
+      "total_barang": 138,
+      "target_per_hour": 3600,
+      "target_per_shift": 32400,
+      "pcs_per_interval": 1,
+      "interval_seconds": 1,
+      "shift_duration_hours": 9,
+      "timestamp_saved": "2026-06-19T07:37:55.771Z"
     }
   ],
   "current_state": {
     "shift": "Shift 1",
     "shift_date": "2026-06-19",
-    "count": 0,
-    "daily_total": 0,
+    "count": 34,
+    "daily_total": 34,
     "daily_date": "2026-06-19",
-    "last_iot_seen": "2026-06-19T02:06:30.267Z",
-    "updated_at": "2026-06-19T02:06:30.269Z",
-    "last_device_time": "2026-06-19 05:26:33"
+    "last_iot_seen": "2026-06-19T07:42:38.303Z",
+    "updated_at": "2026-06-19T07:42:38.305Z",
+    "last_device_time": "2000-00-00 00:00:00",
+    "last_device_counter": 182,
+    "device_offset": 148
   },
   "production_target": {
     "target_per_hour": 3600,
-    "pcs_per_interval": 5,
-    "interval_seconds": 5
+    "pcs_per_interval": 1,
+    "interval_seconds": 1
   },
   "_meta": {
-    "last_history_id": 11,
+    "last_history_id": 20,
     "demo_seeded": true
   }
 }

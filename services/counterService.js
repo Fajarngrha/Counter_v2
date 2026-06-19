@@ -21,7 +21,6 @@ const {
 let lastBoundaryMin = -1;
 let shiftStartCount = 0;
 let shiftStartTime = null;
-let resetGraceUntil = 0;
 
 function saveShiftRecord(tanggal, shift, totalBarang) {
   const target = buildTargetSnapshot(getTarget(), shift);
@@ -155,20 +154,27 @@ function applyDeviceCounter(deviceCounter, deviceTime) {
   }
 
   const parsed = Number(deviceCounter);
-  const nextCounter = Number.isFinite(parsed) && parsed >= 0 ? Math.floor(parsed) : count;
+  const nextDeviceCounter = Number.isFinite(parsed) && parsed >= 0
+    ? Math.floor(parsed)
+    : Number.isFinite(state.last_device_counter) ? state.last_device_counter : 0;
 
-  let safeCounter;
-  if (Date.now() < resetGraceUntil) {
-    // Setelah reset manual, abaikan paket stale dari sebelum hardware di-reset.
-    if (nextCounter > count) {
-      return getDashboardData();
-    }
-    safeCounter = nextCounter;
-  } else {
-    // Lindungi dari paket out-of-order yang menurunkan nilai counter.
-    safeCounter = Math.max(count, nextCounter);
+  let deviceOffset = Number.isFinite(state.device_offset) ? state.device_offset : null;
+  const lastDeviceCounter = Number.isFinite(state.last_device_counter)
+    ? state.last_device_counter
+    : null;
+
+  // Migrasi mulus dari mode lama (absolute counter) ke mode offset.
+  if (deviceOffset === null) {
+    deviceOffset = Math.max(0, nextDeviceCounter - count);
   }
 
+  // Jika counter device turun (misalnya device reset), jangkar offset disesuaikan ulang.
+  if (lastDeviceCounter !== null && nextDeviceCounter < lastDeviceCounter) {
+    deviceOffset = Math.max(0, nextDeviceCounter - count);
+  }
+
+  const mappedCounter = Math.max(0, nextDeviceCounter - deviceOffset);
+  const safeCounter = Math.max(count, mappedCounter);
   const delta = safeCounter - count;
   count = safeCounter;
   dailyTotal += delta;
@@ -181,6 +187,8 @@ function applyDeviceCounter(deviceCounter, deviceTime) {
     daily_date: dailyDate,
     last_iot_seen: new Date().toISOString(),
     last_device_time: deviceTime || null,
+    last_device_counter: nextDeviceCounter,
+    device_offset: deviceOffset,
   });
 
   return getDashboardData();
@@ -207,7 +215,13 @@ function resetCounter() {
     dailyTotal = Math.max(0, dailyTotal - prevCount);
   }
 
-  resetGraceUntil = Date.now() + 30000;
+  const currentDeviceCounter = Number.isFinite(state.last_device_counter)
+    ? state.last_device_counter
+    : null;
+  const nextOffset = currentDeviceCounter !== null
+    ? currentDeviceCounter
+    : Number.isFinite(state.device_offset) ? state.device_offset : 0;
+
   shiftStartCount = 0;
   shiftStartTime = Date.now();
 
@@ -218,6 +232,7 @@ function resetCounter() {
     daily_total: dailyTotal,
     daily_date: dailyDate,
     last_iot_seen: new Date().toISOString(),
+    device_offset: nextOffset,
   });
 
   return getDashboardData();
