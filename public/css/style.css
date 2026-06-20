@@ -364,7 +364,7 @@ body {
 
 .counter-footer {
   display: flex;
-  align-items: stretch;
+  align-items: flex-end;
   justify-content: center;
   gap: 1rem;
   margin-top: 1.25rem;
@@ -376,8 +376,11 @@ body {
 .counter-reset-btn {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 0.4rem;
-  align-self: center;
+  min-width: 108px;
+  min-height: 32px;
+  align-self: flex-end;
 }
 
 .counter-reset-btn svg {
@@ -387,12 +390,12 @@ body {
 
 .counter-target-box {
   flex: 0 0 auto;
-  min-width: 125px;
+  min-width: 165px;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 0.75rem 1rem;
+  padding: 0.65rem 0.9rem 0.75rem;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--bg-input);
@@ -421,6 +424,23 @@ body {
 
 .counter-target-value--max {
   color: var(--accent);
+}
+
+.counter-target-reset-btn {
+  margin-top: 0.5rem;
+  min-width: 108px;
+  min-height: 32px;
+  padding: 0.35rem 0.7rem;
+  font-size: 0.72rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-color: var(--border);
+}
+
+.counter-target-reset-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .counter-target-rate {

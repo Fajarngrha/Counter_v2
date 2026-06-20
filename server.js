@@ -4,7 +4,13 @@ const path = require('path');
 const http = require('http');
 const { Server } = require('socket.io');
 const config = require('./config');
-const { initCounter, handleShiftBoundary, getDashboardData, resetCounter } = require('./services/counterService');
+const {
+  initCounter,
+  handleShiftBoundary,
+  getDashboardData,
+  resetCounter,
+  resetTargetTicker,
+} = require('./services/counterService');
 const { initMqtt, publishDeviceReset } = require('./services/mqttService');
 const { getHistory, getTarget, updateTarget } = require('./db/database');
 
@@ -77,6 +83,12 @@ app.get('/api/target', requireAuth, (req, res) => {
 app.post('/api/counter/reset', requireAuth, (req, res) => {
   publishDeviceReset();
   const data = resetCounter();
+  broadcastDashboard(data);
+  res.json(data);
+});
+
+app.post('/api/target-ticker/reset', requireAuth, (req, res) => {
+  const data = resetTargetTicker();
   broadcastDashboard(data);
   res.json(data);
 });

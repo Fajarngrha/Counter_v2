@@ -22,6 +22,16 @@ let lastBoundaryMin = -1;
 let shiftStartCount = 0;
 let shiftStartTime = null;
 
+function calcRawTargetTicker(target, shift, progress) {
+  const targetPerShift = target.target_per_hour * shift.durationHours;
+  const elapsedSeconds = Math.floor(progress.elapsedMinutes * 60);
+  const intervalCount = target.interval_seconds > 0
+    ? Math.floor(elapsedSeconds / target.interval_seconds)
+    : 0;
+
+  return Math.min(intervalCount * target.pcs_per_interval, targetPerShift);
+}
+
 function saveShiftRecord(tanggal, shift, totalBarang) {
   const target = buildTargetSnapshot(getTarget(), shift);
   saveShiftHistory(tanggal, shift, totalBarang, target);
@@ -43,6 +53,7 @@ function initCounter() {
       count: 0,
       daily_total: state.daily_date === today ? state.daily_total : 0,
       daily_date: today,
+      target_ticker_offset: 0,
     });
     shiftStartCount = 0;
   } else {
@@ -75,6 +86,7 @@ function handleShiftBoundary() {
     count: 0,
     daily_total: state.daily_date === today ? state.daily_total + state.count : state.count,
     daily_date: today,
+    target_ticker_offset: 0,
   });
 
   shiftStartCount = 0;
@@ -238,6 +250,20 @@ function resetCounter() {
   return getDashboardData();
 }
 
+function resetTargetTicker() {
+  const state = getState();
+  const target = getTarget();
+  const shift = getCurrentShift();
+  const progress = getShiftProgress(shift, shift.wib);
+  const rawTargetTicker = calcRawTargetTicker(target, shift, progress);
+
+  updateState({
+    target_ticker_offset: rawTargetTicker,
+  });
+
+  return getDashboardData();
+}
+
 function updateIotSeen() {
   updateState({ last_iot_seen: new Date().toISOString() });
 }
@@ -285,13 +311,11 @@ function getDashboardData() {
   const expectedByNow = Math.round(targetPerShift * progress.fraction);
   const elapsedSeconds = Math.floor(progress.elapsedMinutes * 60);
   const totalSeconds = Math.floor(progress.totalMinutes * 60);
-  const intervalCount = target.interval_seconds > 0
-    ? Math.floor(elapsedSeconds / target.interval_seconds)
+  const targetTickerOffset = Number.isFinite(state.target_ticker_offset)
+    ? state.target_ticker_offset
     : 0;
-  const targetByInterval = Math.min(
-    intervalCount * target.pcs_per_interval,
-    targetPerShift
-  );
+  const rawTargetByInterval = calcRawTargetTicker(target, shift, progress);
+  const targetByInterval = Math.max(0, rawTargetByInterval - targetTickerOffset);
   const behind = expectedByNow - state.count;
   const progressPercent = targetPerShift > 0
     ? Math.min(100, Math.round((state.count / targetPerShift) * 100))
@@ -333,7 +357,7 @@ function getDashboardData() {
     },
     targetTicker: {
       value: targetByInterval,
-      max: targetPerShift,
+      max: Math.max(0, targetPerShift - targetTickerOffset),
     },
     analytics: {
       currentRate,
@@ -354,6 +378,7 @@ module.exports = {
   incrementCounter,
   applyDeviceCounter,
   resetCounter,
+  resetTargetTicker,
   updateIotSeen,
   getDashboardData,
 };

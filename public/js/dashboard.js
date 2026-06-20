@@ -39,8 +39,6 @@ const el = (id) => document.getElementById(id);
 const counterValueEl = el('counterValue');
 const counterTargetValueEl = el('counterTargetValue');
 const progressFillEl = el('progressFill');
-const alertBoxEl = el('alertBox');
-const alertIconEl = el('alertIcon');
 const projectionWrapEl = el('projectionWrap');
 
 let lastCounter = null;
@@ -87,10 +85,11 @@ function pulseCounter() {
 function calcLiveIntervalTarget(state) {
   if (!state?.pcsPerInterval || !state?.intervalSeconds) return 0;
 
-  const elapsed = state.elapsedSeconds + (Date.now() - state.syncedAt) / 1000;
-  const intervals = Math.floor(elapsed / state.intervalSeconds);
-  const value = intervals * state.pcsPerInterval;
-  const max = state.targetPerShift || value;
+  const elapsedNow = state.baseElapsedSeconds + (Date.now() - state.syncedAt) / 1000;
+  const elapsedDelta = Math.max(0, elapsedNow - state.baseElapsedSeconds);
+  const intervals = Math.floor(elapsedDelta / state.intervalSeconds);
+  const value = state.baseValue + intervals * state.pcsPerInterval;
+  const max = state.maxValue || value;
   return Math.min(value, max);
 }
 
@@ -98,8 +97,9 @@ function syncTargetTickerState(data) {
   targetTickerState = {
     pcsPerInterval: data.target?.pcsPerInterval,
     intervalSeconds: data.target?.intervalSeconds,
-    targetPerShift: data.target?.perShift,
-    elapsedSeconds: data.progress?.elapsedSeconds ?? 0,
+    maxValue: data.targetTicker?.max ?? data.target?.perShift,
+    baseValue: data.targetTicker?.value ?? 0,
+    baseElapsedSeconds: data.progress?.elapsedSeconds ?? 0,
     syncedAt: Date.now(),
   };
   updateTargetTickerDisplay();
@@ -109,13 +109,13 @@ function updateTargetTickerDisplay() {
   if (!targetTickerState) return;
 
   const value = calcLiveIntervalTarget(targetTickerState);
-  const { pcsPerInterval, intervalSeconds, targetPerShift } = targetTickerState;
+  const { maxValue } = targetTickerState;
 
   counterTargetValueEl.textContent = fmtNumber(value);
   // el('counterTargetRate').textContent = `+${pcsPerInterval} pcs / ${intervalSeconds} dtk`;
   // el('counterTargetMax').textContent = `dari ${fmtNumber(targetPerShift)} pcs shift`;
 
-  const reachedMax = value >= targetPerShift;
+  const reachedMax = value >= maxValue;
   counterTargetValueEl.classList.toggle('counter-target-value--max', reachedMax);
 
   if (lastTargetTickerValue !== null && value > lastTargetTickerValue) {
@@ -137,49 +137,6 @@ function setEditMode(active) {
   el('targetEditForm').classList.toggle('hidden', !active);
   el('targetActionsView').classList.toggle('hidden', active);
   el('targetActionsEdit').classList.toggle('hidden', !active);
-}
-
-function renderDifferenceIndicator(analytics) {
-  if (!alertBoxEl || !alertIconEl) return;
-
-  const behind = analytics?.behind || 0;
-  const ahead = analytics?.ahead || 0;
-  const expected = analytics?.expectedByNow || 0;
-
-  alertBoxEl.classList.remove('alert-box--ahead', 'alert-box--neutral');
-
-  if (behind > 0) {
-    alertBoxEl.classList.remove('hidden');
-    alertIconEl.innerHTML = `
-      <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
-      <path d="M12 9v4"></path>
-      <path d="M12 17h.01"></path>
-    `;
-    // el('alertText').textContent =
-    //   `Tertinggal ${fmtNumber(behind)} pcs dari ekspektasi waktu saat ini (${fmtNumber(expected)} pcs)`;
-    // return;
-  }
-
-  if (ahead > 0) {
-    alertBoxEl.classList.remove('hidden');
-    alertBoxEl.classList.add('alert-box--ahead');
-    alertIconEl.innerHTML = `
-      <path d="M23 6l-9.5 9.5-5-5L1 18"></path>
-      <path d="M17 6h6v6"></path>
-    `;
-    el('alertText').textContent =
-      `Unggul ${fmtNumber(ahead)} pcs dari ekspektasi waktu saat ini (${fmtNumber(expected)} pcs)`;
-    return;
-  }
-
-  alertBoxEl.classList.remove('hidden');
-  alertBoxEl.classList.add('alert-box--neutral');
-  alertIconEl.innerHTML = `
-    <circle cx="12" cy="12" r="10"></circle>
-    <path d="M12 8v4"></path>
-    <path d="M12 16h.01"></path>
-  `;
-  el('alertText').textContent = `Sesuai waktu saat ini (${fmtNumber(expected)} pcs)`;
 }
 
 function render(data) {
@@ -234,7 +191,6 @@ function render(data) {
   el('nextShiftName').textContent = data.nextShift?.name || '-';
   el('nextShiftStart').textContent = data.nextShift?.startTime || '-';
 
-  renderDifferenceIndicator(data.analytics);
   syncTargetTickerState(data);
 }
 
@@ -310,6 +266,23 @@ async function init() {
     }
   });
 
+  el('btnResetTargetTicker').addEventListener('click', async () => {
+    const current = Number(latestDashboardData?.targetTicker?.value || 0);
+    if (current <= 0) return;
+
+    if (!confirm(`Reset Target Saat Ini dari ${fmtNumber(current)} ke 0?`)) return;
+
+    try {
+      el('btnResetTargetTicker').disabled = true;
+      const data = await postJson('/api/target-ticker/reset', {});
+      render(data);
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      el('btnResetTargetTicker').disabled = false;
+    }
+  });
+
   el('inpPcsPerInterval').addEventListener('input', updatePreview);
   el('inpIntervalSeconds').addEventListener('input', updatePreview);
 
@@ -348,6 +321,8 @@ async function init() {
 
       saveTargetToStorage(pcsPerInterval, intervalSeconds);
       await syncTargetToServer(pcsPerInterval, intervalSeconds);
+      // Rebase hitungan "Target Saat Ini" ke target baru agar naik normal dari 0.
+      await postJson('/api/target-ticker/reset', {});
 
       setEditMode(false);
 
