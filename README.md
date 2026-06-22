@@ -45,9 +45,9 @@ npm start
 
 Buka:
 
-- Login: http://localhost:3000/
-- Dashboard: http://localhost:3000/dashboard
-- Riwayat: http://localhost:3000/history
+- Login: http://localhost:3010/
+- Dashboard: http://localhost:3010/dashboard
+- Riwayat: http://localhost:3010/history
 
 Demo login:
 

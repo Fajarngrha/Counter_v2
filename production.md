@@ -8,7 +8,7 @@ Dokumen ini menjelaskan cara men-deploy **IoT Production Counter Dashboard** ke 
 ESP32 (sensor) ──WiFi──► MQTT Broker (Mosquitto @ Raspberry Pi)
                               │
                               ▼
-                    Backend Node.js (port 3000)
+                    Backend Node.js (port 3010)
                               │
                               ▼
                     Database lokal (data/db.json)
@@ -102,7 +102,7 @@ Default Mosquitto di Pi biasanya listen di semua interface. Pastikan firewall ti
 
 ```bash
 sudo ufw allow 1883/tcp
-sudo ufw allow 3000/tcp
+sudo ufw allow 3010/tcp
 sudo ufw enable
 ```
 
@@ -152,7 +152,7 @@ nano .env
 Isi contoh production:
 
 ```env
-PORT=3000
+PORT=3010
 SESSION_SECRET=GANTI-DENGAN-STRING-ACAK-PANJANG-MINIMAL-32-KARAKTER
 MQTT_BROKER_URL=mqtt://localhost:1883
 MQTT_TOPIC=iot/counter/increment
@@ -192,7 +192,7 @@ npm start
 Indikator sukses:
 
 ```
-Server berjalan di http://localhost:3000
+Server berjalan di http://localhost:3010
 [MQTT] Terhubung ke mqtt://localhost:1883
 [MQTT] Subscribe ke topik: iot/counter/increment
 ```
@@ -200,7 +200,7 @@ Server berjalan di http://localhost:3000
 Akses dari browser (PC di jaringan yang sama):
 
 ```
-http://192.168.0.50:3000
+http://192.168.0.50:3010
 ```
 
 Login dengan `ADMIN_USERNAME` / `ADMIN_PASSWORD` dari `.env`.
@@ -260,7 +260,7 @@ sudo journalctl -u iot-counter -f
 
 ## 7) Reverse Proxy dengan Nginx (Opsional)
 
-Agar dashboard bisa diakses tanpa `:3000` dan siap ditambah HTTPS.
+Agar dashboard bisa diakses tanpa `:3010` dan siap ditambah HTTPS.
 
 ```bash
 sudo apt install -y nginx
@@ -275,7 +275,7 @@ server {
     server_name 192.168.0.50;
 
     location / {
-        proxy_pass http://127.0.0.1:3000;
+        proxy_pass http://127.0.0.1:3010;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";
@@ -346,7 +346,7 @@ Backend Pi ──subscribe───┘ (bisa localhost jika broker di Pi yang sa
 
 - Di ESP32: `mqtt_server` = **IP/hostname broker**, bukan IP dashboard Node.js (kecuali broker memang di Pi yang sama).
 - Di `.env` Pi: `MQTT_BROKER_URL=mqtt://localhost:1883` jika Mosquitto jalan di Pi yang sama.
-- **Port 3000** (dashboard) hanya untuk browser operator, **bukan** untuk ESP32.
+- **Port 3010** (dashboard) hanya untuk browser operator, **bukan** untuk ESP32.
 
 ### 9.3 Solusi jika beda subnet / beda lokasi
 
@@ -503,7 +503,7 @@ sudo systemctl status iot-counter
 ```bash
 sudo systemctl status iot-counter
 sudo journalctl -u iot-counter -n 50
-curl http://localhost:3000/api/session
+curl http://localhost:3010/api/session
 ```
 
 Cek firewall dan IP Pi.
@@ -534,10 +534,10 @@ MQTT_TOPIC=iot/counter/increment
 - Jangan jalankan `npm start` dari folder lain (working directory harus project root)
 - Gunakan systemd service dengan `WorkingDirectory` yang benar
 
-### Port 3000 sudah dipakai
+### Port 3010 sudah dipakai
 
 ```bash
-sudo lsof -i :3000
+sudo lsof -i :3010
 ```
 
 Ubah `PORT` di `.env` atau hentikan proses yang bentrok.
@@ -548,7 +548,7 @@ Ubah `PORT` di `.env` atau hentikan proses yang bentrok.
 
 | Komponen | Port / Path |
 |----------|-------------|
-| Dashboard HTTP | `3000` (atau `80` via Nginx) |
+| Dashboard HTTP | `3010` (atau `80` via Nginx) |
 | MQTT Mosquitto | `1883` |
 | Database | `/home/pi/iot-counter/data/db.json` |
 | Environment | `/home/pi/iot-counter/.env` |
@@ -652,7 +652,7 @@ Langkah umum (semua provider):
 - Ganti username/password default broker.
 - Gunakan topic spesifik per line/site, misalnya:
   - `pabrik/site-a/line1/counter`
-- Jangan expose dashboard `:3000` ke internet publik tanpa HTTPS + firewall.
+- Jangan expose dashboard `:3010` ke internet publik tanpa HTTPS + firewall.
 - Dashboard cukup diakses operator via LAN/VPN kantor.
 
 ### 15.6 Ketahanan saat internet putus (lapangan)

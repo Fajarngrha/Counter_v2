@@ -77,7 +77,7 @@ Isi minimal yang harus disesuaikan:
 
 | Variabel | Contoh | Keterangan |
 |----------|--------|------------|
-| `PORT` | `3000` | Port web dashboard |
+| `PORT` | `3010` | Port web dashboard |
 | `SESSION_SECRET` | string acak panjang | untuk session login |
 | `MQTT_BROKER_URL` | `mqtt://192.168.0.104:1883` | **IP broker**, bukan IP ESP32 |
 | `MQTT_TOPIC` | `iot/counter/increment` | **Harus sama** dengan `mqtt_topic` di sketch ESP32 |
@@ -86,7 +86,7 @@ Isi minimal yang harus disesuaikan:
 Contoh `.env` lengkap:
 
 ```env
-PORT=3000
+PORT=3010
 SESSION_SECRET=ubah-ini-jadi-string-acak-panjang
 MQTT_BROKER_URL=mqtt://192.168.0.104:1883
 MQTT_TOPIC=iot/counter/increment
@@ -111,12 +111,12 @@ Semua perangkat harus berada di **jaringan yang sama** (atau routing yang mengiz
 ┌─────────────┐     subscribe            │
 │  Backend    │ ◄────────────────────────┘
 │  Node.js    │     mqtt://<IP-broker>:1883
-│  :3000      │
+│  :3010      │
 └──────┬──────┘
        │ Socket.IO / HTTP
        ▼
 ┌─────────────┐
-│  Browser    │  http://localhost:3000
+│  Browser    │  http://localhost:3010
 │  Dashboard  │
 └─────────────┘
 ```
@@ -126,7 +126,7 @@ Checklist jaringan:
 - [ ] ESP32 terhubung WiFi (SSID & password benar di `services/counter.ino` atau sketch Anda).
 - [ ] `mqtt_server` di ESP32 = **IP laptop/server tempat Mosquitto berjalan** (contoh: `192.168.0.104`), bukan `localhost`.
 - [ ] Laptop bisa `ping` IP ESP32 (opsional, untuk debug).
-- [ ] Port **3000** tidak dipakai aplikasi lain (backend dashboard).
+- [ ] Port **3010** tidak dipakai aplikasi lain (backend dashboard).
 - [ ] Port **1883** terbuka di mesin broker.
 
 ### 1.5 Keselarasan Topic & Format Payload
@@ -216,12 +216,12 @@ npm start
 
 Indikator berhasil:
 
-- Muncul log `Server berjalan di http://localhost:3000`
+- Muncul log `Server berjalan di http://localhost:3010`
 - Muncul log MQTT `Terhubung` dan `Subscribe ke topik`
 
 ## 3) Login Dashboard
 
-- Buka `http://localhost:3000`
+- Buka `http://localhost:3010`
 - Login:
   - Username: `admin`
   - Password: `admin123`
