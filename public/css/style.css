@@ -575,6 +575,10 @@ body {
   margin-bottom: 0.35rem;
 }
 
+.rate-field--full {
+  grid-column: 1 / -1;
+}
+
 .rate-field input {
   width: 100%;
   padding: 0.65rem 0.85rem;

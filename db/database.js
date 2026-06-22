@@ -106,6 +106,7 @@ function normalizeHistoryRow(row, fallbackTarget) {
     shift_duration_hours: duration,
     target_per_hour: targetPerHour,
     target_per_shift: targetPerShift,
+    model: row.model ?? fallbackTarget.model ?? '-',
     pcs_per_interval: row.pcs_per_interval ?? fallbackTarget.pcs_per_interval,
     interval_seconds: row.interval_seconds ?? fallbackTarget.interval_seconds,
     achievement_percent: achievement,
@@ -142,6 +143,7 @@ function readDb() {
       },
       production_target: {
         target_per_hour: 1800,
+        model: '-',
         pcs_per_interval: 5,
         interval_seconds: 10,
       },
@@ -153,20 +155,32 @@ function readDb() {
   }
 
   const data = JSON.parse(fs.readFileSync(dbPath, 'utf-8'));
+  let mutated = false;
 
   if (!data._meta) data._meta = { last_history_id: 0 };
+  if (!data._meta.demo_seeded) mutated = true;
   if (!data.shift_history) data.shift_history = [];
   if (!data.production_target) {
     data.production_target = {
       target_per_hour: 1800,
+      model: '-',
       pcs_per_interval: 5,
       interval_seconds: 10,
     };
+    mutated = true;
+  }
+  if (!data.production_target.model) {
+    data.production_target.model = '-';
+    mutated = true;
   }
 
   if (!data._meta.demo_seeded && data.shift_history.length === 0) {
     seedDemoHistory(data);
     data._meta.demo_seeded = true;
+    mutated = true;
+  }
+
+  if (mutated) {
     writeDb(data);
   }
 
@@ -183,6 +197,7 @@ function buildTargetSnapshot(target, shiftName) {
   return {
     target_per_hour: targetPerHour,
     target_per_shift: targetPerHour * durationHours,
+    model: target.model || '-',
     pcs_per_interval: target.pcs_per_interval,
     interval_seconds: target.interval_seconds,
     shift_duration_hours: durationHours,
@@ -202,6 +217,7 @@ function saveShiftHistory(tanggal, shift, totalBarang, targetSnapshot) {
     total_barang: totalBarang,
     target_per_hour: target.target_per_hour,
     target_per_shift: target.target_per_shift,
+    model: target.model || '-',
     pcs_per_interval: target.pcs_per_interval,
     interval_seconds: target.interval_seconds,
     shift_duration_hours: target.shift_duration_hours,
@@ -290,10 +306,11 @@ function getTarget() {
   return data.production_target;
 }
 
-function updateTarget(targetPerHour, pcsPerInterval, intervalSeconds) {
+function updateTarget(targetPerHour, pcsPerInterval, intervalSeconds, model = '-') {
   const data = readDb();
   data.production_target = {
     target_per_hour: targetPerHour,
+    model: model || '-',
     pcs_per_interval: pcsPerInterval,
     interval_seconds: intervalSeconds,
   };

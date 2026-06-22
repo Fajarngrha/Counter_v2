@@ -135,6 +135,10 @@
               Atur laju target: <strong id="hintPcs">5</strong> pcs setiap <strong id="hintSec">10</strong> detik
             </p>
             <div class="target-rate-inputs">
+              <div class="rate-field rate-field--full">
+                <label for="inpModelTarget">MODEL</label>
+                <input id="inpModelTarget" type="text" placeholder="Contoh: Model A">
+              </div>
               <div class="rate-field">
                 <label for="inpPcsPerInterval">PCS</label>
                 <input id="inpPcsPerInterval" type="number" min="1" step="1" value="5">
@@ -148,6 +152,10 @@
           </div>
 
           <div class="target-grid">
+            <div class="target-item">
+              <div class="label">Model</div>
+              <div class="value"><span id="targetModel">-</span></div>
+            </div>
             <div class="target-item">
               <div class="label">Target / Jam</div>
               <div class="value green"><span id="targetPerHour">-</span> <span class="unit">pcs</span></div>
@@ -190,6 +198,20 @@
         </div>
       </div>
     </section>
+  </div>
+
+  <div id="targetPasswordModal" class="modal-overlay hidden">
+    <div class="modal">
+      <h3>Validasi Simpan Target</h3>
+      <div class="form-group">
+        <label for="inpModalTargetPassword">Password</label>
+        <input id="inpModalTargetPassword" type="password" placeholder="Masukkan password validasi" autocomplete="current-password">
+      </div>
+      <div class="modal-actions">
+        <button id="btnCancelTargetPassword" class="btn btn-ghost" type="button">Batal</button>
+        <button id="btnConfirmTargetPassword" class="btn btn-success" type="button">Simpan</button>
+      </div>
+    </div>
   </div>
 
   <script src="/socket.io/socket.io.js"></script>

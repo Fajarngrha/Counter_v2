@@ -11,7 +11,12 @@ const {
   resetCounter,
   resetTargetTicker,
 } = require('./services/counterService');
-const { initMqtt, publishDeviceReset } = require('./services/mqttService');
+const {
+  initMqtt,
+  publishDeviceReset,
+  publishTargetConfig,
+  publishTargetTickerReset,
+} = require('./services/mqttService');
 const { getHistory, getTarget, updateTarget } = require('./db/database');
 
 const app = express();
@@ -88,22 +93,30 @@ app.post('/api/counter/reset', requireAuth, (req, res) => {
 });
 
 app.post('/api/target-ticker/reset', requireAuth, (req, res) => {
+  publishTargetTickerReset();
   const data = resetTargetTicker();
   broadcastDashboard(data);
   res.json(data);
 });
 
 app.put('/api/target', requireAuth, (req, res) => {
-  const { targetPerHour, pcsPerInterval, intervalSeconds } = req.body;
+  const { targetPerHour, pcsPerInterval, intervalSeconds, model, editPassword } = req.body;
+  if (!editPassword || editPassword !== config.auth.password) {
+    return res.status(403).json({ error: 'Password validasi salah' });
+  }
   if (!targetPerHour || targetPerHour < 1) {
     return res.status(400).json({ error: 'Target tidak valid' });
   }
+  const safeModel = (typeof model === 'string' && model.trim().length > 0) ? model.trim() : '-';
   updateTarget(
     parseInt(targetPerHour, 10),
     parseInt(pcsPerInterval, 10) || 5,
-    parseInt(intervalSeconds, 10) || 10
+    parseInt(intervalSeconds, 10) || 10,
+    safeModel
   );
-  res.json(getTarget());
+  const target = getTarget();
+  publishTargetConfig(target);
+  res.json(target);
 });
 
 app.get('/api/session', (req, res) => {
@@ -128,6 +141,7 @@ io.on('connection', (socket) => {
 
 initCounter();
 initMqtt(broadcastDashboard);
+publishTargetConfig(getTarget());
 
 setInterval(() => {
   if (handleShiftBoundary()) {

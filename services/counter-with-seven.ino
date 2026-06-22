@@ -1,8 +1,7 @@
 #include <WiFi.h>
 #include <PubSubClient.h>
 #include <time.h>
-#include <Wire.h>
-#include <LiquidCrystal_I2C.h>
+#include <TM1637Display.h>
 #include <ThreeWire.h>
 #include <RtcDS1302.h>
 
@@ -17,21 +16,15 @@ const long gmtOffsetSeconds = 7 * 3600; // WIB UTC+7
 const int daylightOffsetSeconds = 0;
 
 const int pinRelay = 5;
-const int lcdSdaPin = 8;
-const int lcdSclPin = 9;
-const uint32_t lcdI2cClockHz = 50000; // turunkan clock agar lebih stabil pada kabel/noise
 
-// Sesuaikan alamat jika LCD Anda memakai 0x3F.
-const uint8_t lcdAddress = 0x27;
-const uint8_t lcdCols = 16;
-const uint8_t lcdRows = 2;
+// Sesuaikan sesuai wiring TM1637 Anda.
+// Pastikan tidak bentrok dengan pin sensor/RTC.
+const int sevenSegClkPin = 4;
+const int sevenSegDioPin = 1;
 
 ThreeWire myWire(7, 6, 10);
 RtcDS1302<ThreeWire> Rtc(myWire);
-LiquidCrystal_I2C* lcd = nullptr;
-uint8_t activeLcdAddress = 0;
-int activeLcdSdaPin = lcdSdaPin;
-int activeLcdSclPin = lcdSclPin;
+TM1637Display display(sevenSegClkPin, sevenSegDioPin);
 
 volatile unsigned long totalCounter = 0;
 unsigned long lastCounterSent = 0;
@@ -45,13 +38,12 @@ WiFiClient espClient;
 PubSubClient client(espClient);
 
 unsigned long lastMqttReconnectAttempt = 0;
-unsigned long lastLcdUpdateMs = 0;
-const unsigned long lcdUpdateIntervalMs = 2000; // perlambat refresh LCD agar lebih nyaman dibaca
-const unsigned long lcdForceRedrawMs = 8000; // paksa redraw berkala agar tidak "stuck blank"
-const unsigned long lcdWatchdogReinitMs = 30000; // reinit jika terlalu lama tidak paint
-unsigned long lastLcdPaintMs = 0;
-uint8_t lcdErrorCount = 0;
-const uint8_t lcdErrorThreshold = 3;
+unsigned long lastSevenSegUpdateMs = 0;
+const unsigned long sevenSegUpdateIntervalMs = 1000;
+unsigned long lastSevenSegScrollMs = 0;
+const unsigned long sevenSegScrollIntervalMs = 450;
+int sevenSegScrollIndex = 0;
+String sevenSegLastText = "";
 
 unsigned long targetPerHour = 1800;
 unsigned long targetPcsPerInterval = 5;
@@ -60,27 +52,19 @@ unsigned long targetTickerOffset = 0;
 String lastShiftName = "";
 
 String getRtcTimestamp();
-void updateLcdDisplay();
 void applyTargetConfig(const String& message);
 void resetTargetTickerOffset();
-void writeLcdLine(uint8_t row, const char* text);
 void handleSerialRtcCalibration();
 void printRtcNow();
 void syncRtcFromNtpWib();
-bool isLcdPresent();
-void initLcdHardware(bool showBootMessage);
-void reinitLcd(const char* reason);
-uint8_t detectLcdAddress();
+void updateSevenSegmentDisplay();
+void showNumberOnSevenSeg(unsigned long value);
+void showScrollingNumber(const String& text);
 
 struct ShiftInfo {
   const char* name;
   uint8_t durationHours;
   unsigned long elapsedSeconds;
-};
-
-struct I2cPinProfile {
-  int sda;
-  int scl;
 };
 
 ShiftInfo getShiftInfo(const RtcDateTime& now) {
@@ -162,7 +146,6 @@ void setup_wifi() {
   Serial.print("IP ESP32: ");
   Serial.println(WiFi.localIP());
 }
-
 
 bool reconnectMqtt() {
   if (client.connected()) return true;
@@ -375,7 +358,42 @@ void resetTargetTickerOffset() {
   targetTickerOffset = rawTarget;
 }
 
-void updateLcdDisplay() {
+void showNumberOnSevenSeg(unsigned long value) {
+  display.showNumberDec((int)value, false, 4, 0);
+}
+
+void showScrollingNumber(const String& text) {
+  if (text != sevenSegLastText) {
+    sevenSegLastText = text;
+    sevenSegScrollIndex = 0;
+    lastSevenSegScrollMs = 0;
+  }
+
+  if (millis() - lastSevenSegScrollMs < sevenSegScrollIntervalMs) return;
+  lastSevenSegScrollMs = millis();
+
+  String padded = "    " + text + "    ";
+  int maxStart = padded.length() - 4;
+  if (maxStart < 0) maxStart = 0;
+  if (sevenSegScrollIndex > maxStart) sevenSegScrollIndex = 0;
+
+  String window = padded.substring(sevenSegScrollIndex, sevenSegScrollIndex + 4);
+  uint8_t segments[4];
+
+  for (int i = 0; i < 4; i++) {
+    char c = window[i];
+    if (c >= '0' && c <= '9') {
+      segments[i] = display.encodeDigit(c - '0');
+    } else {
+      segments[i] = 0x00;
+    }
+  }
+
+  display.setSegments(segments);
+  sevenSegScrollIndex++;
+}
+
+void updateSevenSegmentDisplay() {
   RtcDateTime now = Rtc.GetDateTime();
   ShiftInfo shift = getShiftInfo(now);
 
@@ -385,165 +403,20 @@ void updateLcdDisplay() {
   }
 
   unsigned long targetSaatIni = calcTargetSaatIni(shift);
-
-  char line1[17];
-  snprintf(line1, sizeof(line1), "Jam %02u:%02u  %s",
-           now.Hour(), now.Minute(), shift.name);
-
-  char line2[17];
-  snprintf(line2, sizeof(line2), "Target:%lu", targetSaatIni);
-
-  static char lastLine1[17] = "";
-  static char lastLine2[17] = "";
-
-  const bool forceRedraw = (millis() - lastLcdPaintMs) >= lcdForceRedrawMs;
-  if (!forceRedraw && strcmp(lastLine1, line1) == 0 && strcmp(lastLine2, line2) == 0) {
+  if (targetSaatIni <= 9999UL) {
+    showNumberOnSevenSeg(targetSaatIni);
+    sevenSegLastText = "";
+    sevenSegScrollIndex = 0;
     return;
   }
 
-  if (!isLcdPresent()) {
-    lcdErrorCount++;
-    Serial.print("LCD I2C tidak terdeteksi (");
-    Serial.print(lcdErrorCount);
-    Serial.println(").");
-    if (lcdErrorCount == 1) {
-      Serial.print("Cek wiring/power. Pin aktif SDA=");
-      Serial.print(activeLcdSdaPin);
-      Serial.print(" SCL=");
-      Serial.println(activeLcdSclPin);
-    }
-    if (lcdErrorCount >= lcdErrorThreshold) {
-      reinitLcd("I2C tidak terdeteksi berulang");
-    }
-    return;
-  }
-
-  writeLcdLine(0, line1);
-  writeLcdLine(1, line2);
-  lastLcdPaintMs = millis();
-  lcdErrorCount = 0;
-
-  strncpy(lastLine1, line1, sizeof(lastLine1) - 1);
-  lastLine1[sizeof(lastLine1) - 1] = '\0';
-  strncpy(lastLine2, line2, sizeof(lastLine2) - 1);
-  lastLine2[sizeof(lastLine2) - 1] = '\0';
-}
-
-void writeLcdLine(uint8_t row, const char* text) {
-  if (lcd == nullptr) return;
-
-  char buf[17];
-  memset(buf, ' ', 16);
-  buf[16] = '\0';
-
-  size_t len = strlen(text);
-  if (len > 16) len = 16;
-  memcpy(buf, text, len);
-
-  lcd->setCursor(0, row);
-  lcd->print(buf);
-}
-
-bool isLcdPresent() {
-  if (activeLcdAddress == 0) return false;
-  Wire.begin(activeLcdSdaPin, activeLcdSclPin);
-  Wire.setClock(lcdI2cClockHz);
-  Wire.beginTransmission(activeLcdAddress);
-  return Wire.endTransmission() == 0;
-}
-
-uint8_t detectLcdAddress() {
-  const uint8_t preferred[2] = { lcdAddress, 0x3F };
-
-  for (uint8_t i = 0; i < 2; i++) {
-    Wire.beginTransmission(preferred[i]);
-    if (Wire.endTransmission() == 0) return preferred[i];
-  }
-
-  for (uint8_t addr = 1; addr < 127; addr++) {
-    Wire.beginTransmission(addr);
-    if (Wire.endTransmission() == 0) return addr;
-  }
-
-  return 0;
-}
-
-void initLcdHardware(bool showBootMessage) {
-  const I2cPinProfile profiles[] = {
-    { lcdSdaPin, lcdSclPin }, // default dari wiring saat ini
-    { 2, 3 },                 // fallback umum ESP32-C3
-    { 3, 2 },
-    { 0, 1 },
-    { 1, 0 },
-  };
-
-  uint8_t detected = 0;
-  int detectedSda = lcdSdaPin;
-  int detectedScl = lcdSclPin;
-
-  for (size_t i = 0; i < (sizeof(profiles) / sizeof(profiles[0])); i++) {
-    Wire.begin(profiles[i].sda, profiles[i].scl);
-    Wire.setClock(lcdI2cClockHz);
-    delay(10);
-    detected = detectLcdAddress();
-    if (detected != 0) {
-      detectedSda = profiles[i].sda;
-      detectedScl = profiles[i].scl;
-      break;
-    }
-  }
-
-  if (detected == 0) {
-    activeLcdAddress = 0;
-    Serial.println("LCD tidak terdeteksi saat init.");
-    return;
-  }
-
-  activeLcdSdaPin = detectedSda;
-  activeLcdSclPin = detectedScl;
-
-  if (lcd == nullptr || detected != activeLcdAddress) {
-    if (lcd != nullptr) {
-      delete lcd;
-      lcd = nullptr;
-    }
-    lcd = new LiquidCrystal_I2C(detected, lcdCols, lcdRows);
-    activeLcdAddress = detected;
-    Serial.print("LCD terdeteksi di alamat 0x");
-    Serial.println(activeLcdAddress, HEX);
-    Serial.print("Pin I2C aktif SDA=");
-    Serial.print(activeLcdSdaPin);
-    Serial.print(" SCL=");
-    Serial.println(activeLcdSclPin);
-  }
-
-  lcd->init();
-  lcd->backlight();
-  lcd->clear();
-
-  if (showBootMessage) {
-    char bootLine[17];
-    snprintf(bootLine, sizeof(bootLine), "LCD OK 0x%02X", activeLcdAddress);
-    writeLcdLine(0, "Smart Counter");
-    writeLcdLine(1, bootLine);
-    delay(1200);
-    lcd->clear();
-  }
-
-  lastLcdPaintMs = millis();
-  lcdErrorCount = 0;
-}
-
-void reinitLcd(const char* reason) {
-  Serial.print("Reinit LCD: ");
-  Serial.println(reason);
-  initLcdHardware(false);
+  showScrollingNumber(String(targetSaatIni));
 }
 
 void setup() {
   Serial.begin(115200);
   delay(2000);
-  Serial.println("\n--- Sistem Smart Counter Memulai ---");
+  Serial.println("\n--- Sistem Smart Counter (Seven Segment) Memulai ---");
 
   initRtc();
   printRtcNow();
@@ -551,7 +424,10 @@ void setup() {
   Serial.println("  SHOWWIB");
   Serial.println("  SETWIB YYYY-MM-DD HH:MM:SS");
 
-  initLcdHardware(true);
+  display.setBrightness(0x0f, true);
+  display.showNumberDec(8888, false, 4, 0);
+  delay(700);
+  display.clear();
 
   setup_wifi();
   syncRtcFromNtpWib();
@@ -562,7 +438,6 @@ void setup() {
   pinMode(pinRelay, INPUT_PULLUP);
   attachInterrupt(digitalPinToInterrupt(pinRelay), hitungBarang, FALLING);
 }
-
 
 void loop() {
   handleSerialRtcCalibration();
@@ -601,12 +476,8 @@ void loop() {
     Serial.println("--------------------------------------------------");
   }
 
-  if (millis() - lastLcdUpdateMs >= lcdUpdateIntervalMs) {
-    lastLcdUpdateMs = millis();
-    updateLcdDisplay();
-  }
-
-  if ((millis() - lastLcdPaintMs) >= lcdWatchdogReinitMs) {
-    reinitLcd("watchdog timeout");
+  if (millis() - lastSevenSegUpdateMs >= sevenSegUpdateIntervalMs) {
+    lastSevenSegUpdateMs = millis();
+    updateSevenSegmentDisplay();
   }
 }

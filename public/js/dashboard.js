@@ -58,10 +58,10 @@ function loadTargetFromStorage() {
   }
 }
 
-function saveTargetToStorage(pcsPerInterval, intervalSeconds) {
+function saveTargetToStorage(model, pcsPerInterval, intervalSeconds) {
   localStorage.setItem(
     TARGET_STORAGE_KEY,
-    JSON.stringify({ pcsPerInterval, intervalSeconds })
+    JSON.stringify({ model, pcsPerInterval, intervalSeconds })
   );
 }
 
@@ -139,6 +139,54 @@ function setEditMode(active) {
   el('targetActionsEdit').classList.toggle('hidden', !active);
 }
 
+function requestTargetPassword() {
+  return new Promise((resolve) => {
+    const overlay = el('targetPasswordModal');
+    const input = el('inpModalTargetPassword');
+    const btnConfirm = el('btnConfirmTargetPassword');
+    const btnCancel = el('btnCancelTargetPassword');
+
+    if (!overlay || !input || !btnConfirm || !btnCancel) {
+      resolve((window.prompt('Masukkan password validasi untuk menyimpan perubahan target:') || '').trim());
+      return;
+    }
+
+    const close = (value) => {
+      overlay.classList.remove('show');
+      overlay.classList.add('hidden');
+      btnConfirm.removeEventListener('click', onConfirm);
+      btnCancel.removeEventListener('click', onCancel);
+      overlay.removeEventListener('click', onOverlayClick);
+      input.removeEventListener('keydown', onInputKeydown);
+      resolve(value);
+    };
+
+    const onConfirm = () => close(input.value.trim());
+    const onCancel = () => close('');
+    const onOverlayClick = (ev) => {
+      if (ev.target === overlay) onCancel();
+    };
+    const onInputKeydown = (ev) => {
+      if (ev.key === 'Enter') {
+        ev.preventDefault();
+        onConfirm();
+      } else if (ev.key === 'Escape') {
+        ev.preventDefault();
+        onCancel();
+      }
+    };
+
+    input.value = '';
+    overlay.classList.remove('hidden');
+    overlay.classList.add('show');
+    btnConfirm.addEventListener('click', onConfirm);
+    btnCancel.addEventListener('click', onCancel);
+    overlay.addEventListener('click', onOverlayClick);
+    input.addEventListener('keydown', onInputKeydown);
+    setTimeout(() => input.focus(), 0);
+  });
+}
+
 function render(data) {
   latestDashboardData = data;
 
@@ -164,7 +212,11 @@ function render(data) {
     el('iotLastSeen').textContent = data.iot?.lastSeenText ? `Sinyal ${data.iot.lastSeenText}` : '-';
   }
 
+  const storedTarget = loadTargetFromStorage();
+  const targetModel = data.target?.model || storedTarget?.model || '-';
+
   el('targetPerHour').textContent = fmtNumber(data.target?.perHour);
+  el('targetModel').textContent = targetModel;
   el('shiftHours').textContent = data.shift?.durationHours ?? '-';
   el('targetPerShift').textContent = fmtNumber(data.target?.perShift);
   el('currentRate').textContent = fmtNumber(data.analytics?.currentRate);
@@ -194,26 +246,23 @@ function render(data) {
   syncTargetTickerState(data);
 }
 
-async function syncTargetToServer(pcsPerInterval, intervalSeconds) {
+async function syncTargetToServer(model, pcsPerInterval, intervalSeconds, editPassword) {
   const targetPerHour = calcPerHour(pcsPerInterval, intervalSeconds);
-  await putJson('/api/target', { targetPerHour, pcsPerInterval, intervalSeconds });
+  await putJson('/api/target', { model, targetPerHour, pcsPerInterval, intervalSeconds, editPassword });
 }
 
 async function initTargetConfig() {
   const stored = loadTargetFromStorage();
   if (stored) {
+    el('inpModelTarget').value = stored.model || '-';
     el('inpPcsPerInterval').value = stored.pcsPerInterval;
     el('inpIntervalSeconds').value = stored.intervalSeconds;
-    try {
-      await syncTargetToServer(stored.pcsPerInterval, stored.intervalSeconds);
-    } catch (err) {
-      console.warn('Gagal sync target ke server:', err.message);
-    }
   } else {
     const target = await fetchJson('/api/target');
+    el('inpModelTarget').value = target.model || '-';
     el('inpPcsPerInterval').value = target.pcs_per_interval;
     el('inpIntervalSeconds').value = target.interval_seconds;
-    saveTargetToStorage(target.pcs_per_interval, target.interval_seconds);
+    saveTargetToStorage(target.model || '-', target.pcs_per_interval, target.interval_seconds);
   }
   updatePreview();
 }
@@ -285,13 +334,18 @@ async function init() {
 
   el('inpPcsPerInterval').addEventListener('input', updatePreview);
   el('inpIntervalSeconds').addEventListener('input', updatePreview);
+  el('inpModelTarget').addEventListener('input', () => {
+    el('targetModel').textContent = (el('inpModelTarget').value || '').trim() || '-';
+  });
 
   el('btnEditTarget').addEventListener('click', () => {
     const stored = loadTargetFromStorage();
     if (stored) {
+      el('inpModelTarget').value = stored.model || '-';
       el('inpPcsPerInterval').value = stored.pcsPerInterval;
       el('inpIntervalSeconds').value = stored.intervalSeconds;
     } else if (latestDashboardData?.target) {
+      el('inpModelTarget').value = latestDashboardData.target.model || '-';
       el('inpPcsPerInterval').value = latestDashboardData.target.pcsPerInterval;
       el('inpIntervalSeconds').value = latestDashboardData.target.intervalSeconds;
     }
@@ -302,6 +356,7 @@ async function init() {
   el('btnCancelEdit').addEventListener('click', () => {
     const stored = loadTargetFromStorage();
     if (stored) {
+      el('inpModelTarget').value = stored.model || '-';
       el('inpPcsPerInterval').value = stored.pcsPerInterval;
       el('inpIntervalSeconds').value = stored.intervalSeconds;
     }
@@ -311,6 +366,7 @@ async function init() {
 
   el('btnSaveTarget').addEventListener('click', async () => {
     try {
+      const model = (el('inpModelTarget').value || '').trim() || '-';
       const pcsPerInterval = parseInt(el('inpPcsPerInterval').value, 10);
       const intervalSeconds = parseInt(el('inpIntervalSeconds').value, 10);
 
@@ -318,9 +374,14 @@ async function init() {
         alert('PCS dan DETIK harus angka positif.');
         return;
       }
+      const editPassword = await requestTargetPassword();
+      if (!editPassword) {
+        alert('Simpan dibatalkan. Password validasi wajib diisi.');
+        return;
+      }
 
-      saveTargetToStorage(pcsPerInterval, intervalSeconds);
-      await syncTargetToServer(pcsPerInterval, intervalSeconds);
+      saveTargetToStorage(model, pcsPerInterval, intervalSeconds);
+      await syncTargetToServer(model, pcsPerInterval, intervalSeconds, editPassword);
       // Rebase hitungan "Target Saat Ini" ke target baru agar naik normal dari 0.
       await postJson('/api/target-ticker/reset', {});
 

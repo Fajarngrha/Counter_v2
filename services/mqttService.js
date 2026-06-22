@@ -5,6 +5,7 @@ const { applyDeviceCounter } = require('./counterService');
 let client = null;
 let connected = false;
 let broadcastFn = null;
+let latestTargetConfig = null;
 
 function parseSensorPayload(raw) {
   const payload = raw.toString().trim();
@@ -60,6 +61,9 @@ function initMqtt(broadcast) {
       if (err) console.error('[MQTT] Gagal subscribe:', err.message);
       else console.log(`[MQTT] Subscribe ke topik: ${config.mqtt.topic}`);
     });
+    if (latestTargetConfig) {
+      publishTargetConfig(latestTargetConfig);
+    }
   });
 
   client.on('message', (topic, message) => {
@@ -101,6 +105,37 @@ function publishDeviceReset() {
   return true;
 }
 
+function publishTargetConfig(target) {
+  if (!target) return false;
+
+  latestTargetConfig = {
+    targetPerHour: Number(target.target_per_hour) || 0,
+    pcsPerInterval: Number(target.pcs_per_interval) || 0,
+    intervalSeconds: Number(target.interval_seconds) || 0,
+  };
+
+  if (!client || !connected) return false;
+
+  const topic = config.mqtt.commandTopic;
+  const payload = JSON.stringify({
+    action: 'target_config',
+    ...latestTargetConfig,
+  });
+
+  client.publish(topic, payload, { retain: true });
+  console.log(`[MQTT] Konfigurasi target dikirim ke ${topic}: ${payload}`);
+  return true;
+}
+
+function publishTargetTickerReset() {
+  if (!client || !connected) return false;
+
+  const topic = config.mqtt.commandTopic;
+  client.publish(topic, JSON.stringify({ action: 'target_ticker_reset' }));
+  console.log(`[MQTT] Perintah reset target ticker dikirim ke ${topic}`);
+  return true;
+}
+
 function isMqttConnected() {
   return connected;
 }
@@ -109,5 +144,7 @@ module.exports = {
   initMqtt,
   publishIncrement,
   publishDeviceReset,
+  publishTargetConfig,
+  publishTargetTickerReset,
   isMqttConnected,
 };

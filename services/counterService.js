@@ -347,6 +347,7 @@ function getDashboardData() {
     target: {
       perHour: target.target_per_hour,
       perShift: targetPerShift,
+      model: target.model || '-',
       pcsPerInterval: target.pcs_per_interval,
       intervalSeconds: target.interval_seconds,
       rateLabel: `${target.pcs_per_interval} pcs / ${target.interval_seconds} detik`,
