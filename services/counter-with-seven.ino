@@ -16,6 +16,8 @@ const long gmtOffsetSeconds = 7 * 3600; // WIB UTC+7
 const int daylightOffsetSeconds = 0;
 
 const int pinRelay = 5;
+const int pinBtnResetCounter = 2;
+const int pinBtnResetTarget = 3;
 
 // Sesuaikan sesuai wiring TM1637 Anda.
 // Pastikan tidak bentrok dengan pin sensor/RTC.
@@ -44,6 +46,13 @@ unsigned long lastSevenSegScrollMs = 0;
 const unsigned long sevenSegScrollIntervalMs = 450;
 int sevenSegScrollIndex = 0;
 String sevenSegLastText = "";
+const unsigned long buttonDebounceMs = 60;
+bool btnCounterLastReading = HIGH;
+bool btnCounterStableState = HIGH;
+unsigned long btnCounterLastChangeMs = 0;
+bool btnTargetLastReading = HIGH;
+bool btnTargetStableState = HIGH;
+unsigned long btnTargetLastChangeMs = 0;
 
 unsigned long targetPerHour = 1800;
 unsigned long targetPcsPerInterval = 5;
@@ -60,6 +69,9 @@ void syncRtcFromNtpWib();
 void updateSevenSegmentDisplay();
 void showNumberOnSevenSeg(unsigned long value);
 void showScrollingNumber(const String& text);
+void handleButtons();
+void triggerCounterResetFromButton();
+void triggerTargetResetFromButton();
 
 struct ShiftInfo {
   const char* name;
@@ -413,6 +425,58 @@ void updateSevenSegmentDisplay() {
   showScrollingNumber(String(targetSaatIni));
 }
 
+void triggerCounterResetFromButton() {
+  portENTER_CRITICAL(&mux);
+  totalCounter = 0;
+  portEXIT_CRITICAL(&mux);
+  lastCounterSent = 0;
+  lastDebounceTime = millis();
+
+  Serial.println("[BTN] Reset counter aktual ditekan.");
+  publishCounterSnapshot();
+
+  if (client.connected()) {
+    client.publish(mqtt_topic_command, "{\"action\":\"reset\"}");
+  }
+}
+
+void triggerTargetResetFromButton() {
+  resetTargetTickerOffset();
+  Serial.println("[BTN] Reset target saat ini ditekan.");
+
+  if (client.connected()) {
+    client.publish(mqtt_topic_command, "{\"action\":\"target_ticker_reset\"}");
+  }
+}
+
+void handleButtons() {
+  const unsigned long nowMs = millis();
+
+  const bool btnCounterReading = digitalRead(pinBtnResetCounter);
+  if (btnCounterReading != btnCounterLastReading) {
+    btnCounterLastReading = btnCounterReading;
+    btnCounterLastChangeMs = nowMs;
+  }
+  if ((nowMs - btnCounterLastChangeMs) >= buttonDebounceMs && btnCounterReading != btnCounterStableState) {
+    btnCounterStableState = btnCounterReading;
+    if (btnCounterStableState == LOW) {
+      triggerCounterResetFromButton();
+    }
+  }
+
+  const bool btnTargetReading = digitalRead(pinBtnResetTarget);
+  if (btnTargetReading != btnTargetLastReading) {
+    btnTargetLastReading = btnTargetReading;
+    btnTargetLastChangeMs = nowMs;
+  }
+  if ((nowMs - btnTargetLastChangeMs) >= buttonDebounceMs && btnTargetReading != btnTargetStableState) {
+    btnTargetStableState = btnTargetReading;
+    if (btnTargetStableState == LOW) {
+      triggerTargetResetFromButton();
+    }
+  }
+}
+
 void setup() {
   Serial.begin(115200);
   delay(2000);
@@ -437,10 +501,13 @@ void setup() {
 
   pinMode(pinRelay, INPUT_PULLUP);
   attachInterrupt(digitalPinToInterrupt(pinRelay), hitungBarang, FALLING);
+  pinMode(pinBtnResetCounter, INPUT_PULLUP);
+  pinMode(pinBtnResetTarget, INPUT_PULLUP);
 }
 
 void loop() {
   handleSerialRtcCalibration();
+  handleButtons();
 
   // Jaga koneksi MQTT non-blocking
   if (!client.connected()) {

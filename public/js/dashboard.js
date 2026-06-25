@@ -4,6 +4,12 @@ function fmtNumber(n) {
   return new Intl.NumberFormat('id-ID').format(n || 0);
 }
 
+function normalizeModel(value) {
+  const text = String(value || '').trim();
+  if (!text || text === '-') return '';
+  return text;
+}
+
 async function fetchJson(url, opts = {}) {
   const res = await fetch(url, {
     credentials: 'same-origin',
@@ -61,7 +67,7 @@ function loadTargetFromStorage() {
 function saveTargetToStorage(model, pcsPerInterval, intervalSeconds) {
   localStorage.setItem(
     TARGET_STORAGE_KEY,
-    JSON.stringify({ model, pcsPerInterval, intervalSeconds })
+    JSON.stringify({ model: normalizeModel(model) || '-', pcsPerInterval, intervalSeconds })
   );
 }
 
@@ -213,7 +219,9 @@ function render(data) {
   }
 
   const storedTarget = loadTargetFromStorage();
-  const targetModel = data.target?.model || storedTarget?.model || '-';
+  const targetModel = normalizeModel(data.target?.model)
+    || normalizeModel(storedTarget?.model)
+    || '-';
 
   el('targetPerHour').textContent = fmtNumber(data.target?.perHour);
   el('targetModel').textContent = targetModel;
@@ -335,7 +343,7 @@ async function init() {
   el('inpPcsPerInterval').addEventListener('input', updatePreview);
   el('inpIntervalSeconds').addEventListener('input', updatePreview);
   el('inpModelTarget').addEventListener('input', () => {
-    el('targetModel').textContent = (el('inpModelTarget').value || '').trim() || '-';
+    el('targetModel').textContent = normalizeModel(el('inpModelTarget').value) || '-';
   });
 
   el('btnEditTarget').addEventListener('click', () => {
@@ -366,7 +374,7 @@ async function init() {
 
   el('btnSaveTarget').addEventListener('click', async () => {
     try {
-      const model = (el('inpModelTarget').value || '').trim() || '-';
+      const model = normalizeModel(el('inpModelTarget').value) || '-';
       const pcsPerInterval = parseInt(el('inpPcsPerInterval').value, 10);
       const intervalSeconds = parseInt(el('inpIntervalSeconds').value, 10);
 
