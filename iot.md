@@ -203,7 +203,7 @@ File: `services/mqttService.js`
 ### 6.2 Variabel Lingkungan (`.env`)
 
 ```env
-PORT=3000
+PORT=3010
 SESSION_SECRET=string-acak-panjang
 MQTT_BROKER_URL=mqtt://localhost:1883
 MQTT_TOPIC=iot/counter/increment
@@ -292,7 +292,7 @@ Backup rutin file `data/db.json` — lihat `production.md` bagian backup.
 ### 9.1 Development (laptop)
 
 ```
-ESP32 / Simulator → Mosquitto localhost → npm start → browser localhost:3000
+ESP32 / Simulator → Mosquitto localhost → npm start → browser localhost:3010
 ```
 
 ### 9.2 Production lokal (Raspberry Pi)

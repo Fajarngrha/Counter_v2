@@ -1,14 +1,38 @@
 #include <WiFi.h>
+#include <WiFiClientSecure.h>
 #include <PubSubClient.h>
 #include <time.h>
+#include <Wire.h>
+#include <RTClib.h>
 #include <TM1637Display.h>
-#include <ThreeWire.h>
-#include <RtcDS1302.h>
 
+// ============================================================
+// PILIH MODE MQTT
+// ============================================================
+// true  = HiveMQ Cloud (MQTTS port 8883) -> sesuai production.md
+// false = Broker lokal/LAN (MQTT port 1883)
+#define USE_HIVEMQ_CLOUD true
+
+// ============================================================
+// WIFI
+// ============================================================
 const char* ssid = "ARRAZKA 2 LANTAI 2";
 const char* password = "Razka1109";
+
+// ============================================================
+// MQTT — HiveMQ Cloud (isi dari dashboard HiveMQ)
+// ============================================================
+#if USE_HIVEMQ_CLOUD
+const char* mqtt_server = "e49b2fe6d5eb4d3fa5267a1ab8ff12d5.s1.eu.hivemq.cloud";  // contoh: xxxx.s1.eu.hivemq.cloud
+const int mqtt_port = 8883;
+const char* mqtt_user = "espcounter";
+const char* mqtt_pass = "Acernitro5";
+#else
 const char* mqtt_server = "172.20.10.3";
 const int mqtt_port = 1883;
+const char* mqtt_user = nullptr;
+const char* mqtt_pass = nullptr;
+#endif
 
 const char* mqtt_topic = "iot/counter/increment";
 const char* mqtt_topic_command = "iot/counter/command";
@@ -19,13 +43,15 @@ const int pinRelay = 5;
 const int pinBtnResetCounter = 2;
 const int pinBtnResetTarget = 3;
 
-// Sesuaikan sesuai wiring TM1637 Anda.
-// Pastikan tidak bentrok dengan pin sensor/RTC.
+// I2C untuk DS3231-PRO
+const int rtcSdaPin = 8;
+const int rtcSclPin = 9;
+
+// TM1637 seven segment
 const int sevenSegClkPin = 4;
 const int sevenSegDioPin = 1;
 
-ThreeWire myWire(7, 6, 10);
-RtcDS1302<ThreeWire> Rtc(myWire);
+RTC_DS3231 rtc;
 TM1637Display display(sevenSegClkPin, sevenSegDioPin);
 
 volatile unsigned long totalCounter = 0;
@@ -36,7 +62,11 @@ const unsigned long debounceDelay = 300; // ms
 
 portMUX_TYPE mux = portMUX_INITIALIZER_UNLOCKED;
 
+#if USE_HIVEMQ_CLOUD
+WiFiClientSecure espClient;
+#else
 WiFiClient espClient;
+#endif
 PubSubClient client(espClient);
 
 unsigned long lastMqttReconnectAttempt = 0;
@@ -69,9 +99,14 @@ void syncRtcFromNtpWib();
 void updateSevenSegmentDisplay();
 void showNumberOnSevenSeg(unsigned long value);
 void showScrollingNumber(const String& text);
+<<<<<<< HEAD
 void handleButtons();
 void triggerCounterResetFromButton();
 void triggerTargetResetFromButton();
+=======
+void printMqttDiagnostics();
+const char* mqttStateText(int state);
+>>>>>>> 4e47a66ba8f7d2075665c15837edb0284a3514bb
 
 struct ShiftInfo {
   const char* name;
@@ -79,10 +114,10 @@ struct ShiftInfo {
   unsigned long elapsedSeconds;
 };
 
-ShiftInfo getShiftInfo(const RtcDateTime& now) {
-  int hour = now.Hour();
-  int minute = now.Minute();
-  int second = now.Second();
+ShiftInfo getShiftInfo(const DateTime& now) {
+  int hour = now.hour();
+  int minute = now.minute();
+  int second = now.second();
   unsigned long nowSec = (unsigned long)hour * 3600UL + (unsigned long)minute * 60UL + (unsigned long)second;
 
   if (hour >= 7 && hour < 16) {
@@ -166,7 +201,14 @@ bool reconnectMqtt() {
   String clientId = "ESP32C3Client-";
   clientId += String((uint32_t)ESP.getEfuseMac(), HEX);
 
-  if (client.connect(clientId.c_str())) {
+  bool ok = false;
+#if USE_HIVEMQ_CLOUD
+  ok = client.connect(clientId.c_str(), mqtt_user, mqtt_pass);
+#else
+  ok = client.connect(clientId.c_str());
+#endif
+
+  if (ok) {
     Serial.println(" Berhasil Terhubung ke Broker!");
     client.subscribe(mqtt_topic_command);
     Serial.print("Subscribe ke: ");
@@ -176,7 +218,74 @@ bool reconnectMqtt() {
 
   Serial.print(" Gagal, status=");
   Serial.println(client.state());
+  Serial.print(" Penyebab: ");
+  Serial.println(mqttStateText(client.state()));
+  printMqttDiagnostics();
   return false;
+}
+
+const char* mqttStateText(int state) {
+  switch (state) {
+    case MQTT_CONNECTION_TIMEOUT:
+      return "Timeout - broker tidak merespon (jaringan/DNS/port 8883/TLS).";
+    case MQTT_CONNECTION_LOST:
+      return "Koneksi terputus.";
+    case MQTT_CONNECT_FAILED:
+      return "TCP connect gagal ke host broker.";
+    case MQTT_DISCONNECTED:
+      return "Client belum terkoneksi.";
+    case MQTT_CONNECTED:
+      return "Terkoneksi.";
+    case MQTT_CONNECT_BAD_PROTOCOL:
+      return "Versi protokol MQTT tidak cocok.";
+    case MQTT_CONNECT_BAD_CLIENT_ID:
+      return "Client ID ditolak broker.";
+    case MQTT_CONNECT_UNAVAILABLE:
+      return "Broker tidak tersedia.";
+    case MQTT_CONNECT_BAD_CREDENTIALS:
+      return "Username/Password salah.";
+    case MQTT_CONNECT_UNAUTHORIZED:
+      return "Akses tidak diizinkan (ACL/akun).";
+    default:
+      return "Status tidak dikenal.";
+  }
+}
+
+void printMqttDiagnostics() {
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("Diag MQTT: WiFi belum terkoneksi.");
+    return;
+  }
+
+  Serial.print("Diag MQTT host: ");
+  Serial.print(mqtt_server);
+  Serial.print(":");
+  Serial.println(mqtt_port);
+
+  IPAddress resolvedIp;
+  if (!WiFi.hostByName(mqtt_server, resolvedIp)) {
+    Serial.println("Diag MQTT: DNS resolve gagal.");
+    return;
+  }
+
+  Serial.print("Diag MQTT DNS -> ");
+  Serial.println(resolvedIp);
+
+#if USE_HIVEMQ_CLOUD
+  WiFiClientSecure probeClient;
+  probeClient.setInsecure();
+  bool tcpOk = probeClient.connect(mqtt_server, mqtt_port, 3000);
+#else
+  WiFiClient probeClient;
+  bool tcpOk = probeClient.connect(mqtt_server, mqtt_port, 3000);
+#endif
+
+  if (tcpOk) {
+    Serial.println("Diag MQTT: TCP/TLS socket ke broker BERHASIL.");
+    probeClient.stop();
+  } else {
+    Serial.println("Diag MQTT: TCP/TLS socket ke broker GAGAL (kemungkinan internet/port/firewall).");
+  }
 }
 
 void publishCounterSnapshot() {
@@ -229,18 +338,18 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
 }
 
 void initRtc() {
-  Rtc.Begin();
-  Rtc.SetIsWriteProtected(false);
+  Wire.begin(rtcSdaPin, rtcSclPin);
 
-  if (!Rtc.GetIsRunning()) {
-    Serial.println("RTC tidak berjalan, menyalakan RTC...");
-    Rtc.SetIsRunning(true);
+  if (!rtc.begin()) {
+    Serial.println("RTC DS3231-PRO tidak ditemukan. Cek wiring SDA/SCL.");
+    while (true) {
+      delay(1000);
+    }
   }
 
-  if (!Rtc.IsDateTimeValid()) {
-    Serial.println("Waktu RTC tidak valid, set ke waktu compile.");
-    RtcDateTime compiled(__DATE__, __TIME__);
-    Rtc.SetDateTime(compiled);
+  if (rtc.lostPower()) {
+    Serial.println("RTC kehilangan power, set ke waktu compile.");
+    rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
   }
 }
 
@@ -268,37 +377,35 @@ void syncRtcFromNtpWib() {
     return;
   }
 
-  RtcDateTime ntpTime(
+  rtc.adjust(DateTime(
     timeinfo.tm_year + 1900,
     timeinfo.tm_mon + 1,
     timeinfo.tm_mday,
     timeinfo.tm_hour,
     timeinfo.tm_min,
     timeinfo.tm_sec
-  );
-
-  Rtc.SetDateTime(ntpTime);
+  ));
   Serial.println("RTC berhasil sinkron otomatis dari NTP.");
   printRtcNow();
 }
 
 String getRtcTimestamp() {
-  RtcDateTime now = Rtc.GetDateTime();
+  DateTime now = rtc.now();
 
   char timeBuffer[25];
   snprintf(timeBuffer, sizeof(timeBuffer), "%04u-%02u-%02u %02u:%02u:%02u",
-           now.Year(), now.Month(), now.Day(),
-           now.Hour(), now.Minute(), now.Second());
+           now.year(), now.month(), now.day(),
+           now.hour(), now.minute(), now.second());
 
   return String(timeBuffer);
 }
 
 void printRtcNow() {
-  RtcDateTime now = Rtc.GetDateTime();
+  DateTime now = rtc.now();
   char buf[25];
   snprintf(buf, sizeof(buf), "%04u-%02u-%02u %02u:%02u:%02u",
-           now.Year(), now.Month(), now.Day(),
-           now.Hour(), now.Minute(), now.Second());
+           now.year(), now.month(), now.day(),
+           now.hour(), now.minute(), now.second());
   Serial.print("RTC saat ini (WIB): ");
   Serial.println(buf);
 }
@@ -335,8 +442,7 @@ void handleSerialRtcCalibration() {
       return;
     }
 
-    RtcDateTime manual(year, month, day, hour, minute, second);
-    Rtc.SetDateTime(manual);
+    rtc.adjust(DateTime(year, month, day, hour, minute, second));
     Serial.println("RTC berhasil dikalibrasi ke WIB.");
     printRtcNow();
     return;
@@ -359,7 +465,7 @@ void applyTargetConfig(const String& message) {
 }
 
 void resetTargetTickerOffset() {
-  RtcDateTime now = Rtc.GetDateTime();
+  DateTime now = rtc.now();
   ShiftInfo shift = getShiftInfo(now);
 
   unsigned long intervalCount = (targetIntervalSeconds > 0) ? (shift.elapsedSeconds / targetIntervalSeconds) : 0;
@@ -406,7 +512,7 @@ void showScrollingNumber(const String& text) {
 }
 
 void updateSevenSegmentDisplay() {
-  RtcDateTime now = Rtc.GetDateTime();
+  DateTime now = rtc.now();
   ShiftInfo shift = getShiftInfo(now);
 
   if (lastShiftName != shift.name) {
@@ -480,7 +586,7 @@ void handleButtons() {
 void setup() {
   Serial.begin(115200);
   delay(2000);
-  Serial.println("\n--- Sistem Smart Counter (Seven Segment) Memulai ---");
+  Serial.println("\n--- Sistem Smart Counter (Seven Segment + DS3231) Memulai ---");
 
   initRtc();
   printRtcNow();
@@ -496,6 +602,10 @@ void setup() {
   setup_wifi();
   syncRtcFromNtpWib();
 
+#if USE_HIVEMQ_CLOUD
+  espClient.setInsecure(); // uji awal HiveMQ; production: pakai CA cert
+  client.setBufferSize(512);
+#endif
   client.setServer(mqtt_server, mqtt_port);
   client.setCallback(mqttCallback);
 

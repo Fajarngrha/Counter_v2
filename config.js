@@ -1,7 +1,7 @@
 require('dotenv').config();
 
 module.exports = {
-  port: parseInt(process.env.PORT, 10) || 3000,
+  port: parseInt(process.env.PORT, 10) || 3010,
   sessionSecret: process.env.SESSION_SECRET || 'iot-counter-dev-secret',
   mqtt: {
     brokerUrl: process.env.MQTT_BROKER_URL || 'mqtt://localhost:1883',
