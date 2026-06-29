@@ -40,12 +40,13 @@ const long gmtOffsetSeconds = 7 * 3600; // WIB UTC+7
 const int daylightOffsetSeconds = 0;
 
 const int pinRelay = 5;
-const int pinBtnResetCounter = 2;
+// Hindari pin strapping saat boot (terutama GPIO2/8/9) agar upload stabil.
+const int pinBtnResetCounter = 0;
 const int pinBtnResetTarget = 3;
 
-// I2C untuk DS3231-PRO
-const int rtcSdaPin = 8;
-const int rtcSclPin = 9;
+// I2C untuk DS3231-PRO (dipindah dari 8/9 ke 6/7 agar tidak ganggu mode upload)
+const int rtcSdaPin = 6;
+const int rtcSclPin = 7;
 
 // TM1637 seven segment
 const int sevenSegClkPin = 4;
@@ -99,14 +100,9 @@ void syncRtcFromNtpWib();
 void updateSevenSegmentDisplay();
 void showNumberOnSevenSeg(unsigned long value);
 void showScrollingNumber(const String& text);
-<<<<<<< HEAD
 void handleButtons();
 void triggerCounterResetFromButton();
 void triggerTargetResetFromButton();
-=======
-void printMqttDiagnostics();
-const char* mqttStateText(int state);
->>>>>>> 4e47a66ba8f7d2075665c15837edb0284a3514bb
 
 struct ShiftInfo {
   const char* name;
