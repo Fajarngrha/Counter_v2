@@ -17,7 +17,7 @@ const {
   publishTargetConfig,
   publishTargetTickerReset,
 } = require('./services/mqttService');
-const { getHistory, getTarget, updateTarget } = require('./db/database');
+const { getHistory, getTarget, updateTarget, getState } = require('./db/database');
 
 const app = express();
 const server = http.createServer(app);
@@ -93,8 +93,8 @@ app.post('/api/counter/reset', requireAuth, (req, res) => {
 });
 
 app.post('/api/target-ticker/reset', requireAuth, (req, res) => {
-  publishTargetTickerReset();
   const data = resetTargetTicker();
+  publishTargetTickerReset({ targetTickerOffset: getState().target_ticker_offset });
   broadcastDashboard(data);
   res.json(data);
 });
@@ -115,7 +115,7 @@ app.put('/api/target', requireAuth, (req, res) => {
     safeModel
   );
   const target = getTarget();
-  publishTargetConfig(target);
+  publishTargetConfig(target, { targetTickerOffset: getState().target_ticker_offset });
   res.json(target);
 });
 
@@ -141,7 +141,7 @@ io.on('connection', (socket) => {
 
 initCounter();
 initMqtt(broadcastDashboard);
-publishTargetConfig(getTarget());
+publishTargetConfig(getTarget(), { targetTickerOffset: getState().target_ticker_offset });
 
 setInterval(() => {
   if (handleShiftBoundary()) {

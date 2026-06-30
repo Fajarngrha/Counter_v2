@@ -50,10 +50,14 @@ const int rtcSclPin = 7;
 
 // TM1637 seven segment
 const int sevenSegClkPin = 4;
-const int sevenSegDioPin = 1;
+// Gunakan pin aman yang terlihat tersedia di board (hindari UART/strap pin).
+const int sevenSegDioPin = 18;
 
 RTC_DS3231 rtc;
 TM1637Display display(sevenSegClkPin, sevenSegDioPin);
+bool rtcAvailable = false;
+DateTime fallbackBootTime = DateTime(F(__DATE__), F(__TIME__));
+unsigned long fallbackBootMs = 0;
 
 volatile unsigned long totalCounter = 0;
 unsigned long lastCounterSent = 0;
@@ -80,9 +84,13 @@ String sevenSegLastText = "";
 const unsigned long buttonDebounceMs = 60;
 bool btnCounterLastReading = HIGH;
 bool btnCounterStableState = HIGH;
+bool btnCounterIdleState = HIGH;
+bool btnCounterPressedLatch = false;
 unsigned long btnCounterLastChangeMs = 0;
 bool btnTargetLastReading = HIGH;
 bool btnTargetStableState = HIGH;
+bool btnTargetIdleState = HIGH;
+bool btnTargetPressedLatch = false;
 unsigned long btnTargetLastChangeMs = 0;
 
 unsigned long targetPerHour = 1800;
@@ -103,6 +111,7 @@ void showScrollingNumber(const String& text);
 void handleButtons();
 void triggerCounterResetFromButton();
 void triggerTargetResetFromButton();
+DateTime getCurrentDateTimeWib();
 
 struct ShiftInfo {
   const char* name;
@@ -318,8 +327,20 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
   }
 
   if (lowerMessage.indexOf("\"action\":\"target_ticker_reset\"") >= 0) {
-    resetTargetTickerOffset();
-    Serial.println("Target saat ini di-reset dari dashboard.");
+    // Abaikan echo pesan reset dari device sendiri agar tidak reset dobel.
+    if (lowerMessage.indexOf("\"source\":\"device\"") >= 0) {
+      return;
+    }
+
+    long syncedOffset = parseLongField(message, "targetTickerOffset", -1);
+    if (syncedOffset >= 0) {
+      targetTickerOffset = (unsigned long)syncedOffset;
+      Serial.print("Target saat ini di-sync dari dashboard. Offset=");
+      Serial.println(targetTickerOffset);
+    } else {
+      resetTargetTickerOffset();
+      Serial.println("Target saat ini di-reset dari dashboard.");
+    }
     return;
   }
 
@@ -338,15 +359,39 @@ void initRtc() {
 
   if (!rtc.begin()) {
     Serial.println("RTC DS3231-PRO tidak ditemukan. Cek wiring SDA/SCL.");
-    while (true) {
-      delay(1000);
-    }
+    Serial.println("Lanjut tanpa RTC hardware (fallback waktu internal/NTP).");
+    rtcAvailable = false;
+    fallbackBootTime = DateTime(F(__DATE__), F(__TIME__));
+    fallbackBootMs = millis();
+    return;
   }
+  rtcAvailable = true;
 
   if (rtc.lostPower()) {
     Serial.println("RTC kehilangan power, set ke waktu compile.");
     rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
   }
+}
+
+DateTime getCurrentDateTimeWib() {
+  if (rtcAvailable) {
+    return rtc.now();
+  }
+
+  struct tm timeinfo;
+  if (getLocalTime(&timeinfo, 10)) {
+    return DateTime(
+      timeinfo.tm_year + 1900,
+      timeinfo.tm_mon + 1,
+      timeinfo.tm_mday,
+      timeinfo.tm_hour,
+      timeinfo.tm_min,
+      timeinfo.tm_sec
+    );
+  }
+
+  const unsigned long elapsedSec = (millis() - fallbackBootMs) / 1000UL;
+  return fallbackBootTime + TimeSpan(elapsedSec);
 }
 
 void syncRtcFromNtpWib() {
@@ -373,20 +418,28 @@ void syncRtcFromNtpWib() {
     return;
   }
 
-  rtc.adjust(DateTime(
+  DateTime ntpNow = DateTime(
     timeinfo.tm_year + 1900,
     timeinfo.tm_mon + 1,
     timeinfo.tm_mday,
     timeinfo.tm_hour,
     timeinfo.tm_min,
     timeinfo.tm_sec
-  ));
-  Serial.println("RTC berhasil sinkron otomatis dari NTP.");
+  );
+
+  fallbackBootTime = ntpNow;
+  fallbackBootMs = millis();
+  if (rtcAvailable) {
+    rtc.adjust(ntpNow);
+    Serial.println("RTC berhasil sinkron otomatis dari NTP.");
+  } else {
+    Serial.println("Sinkron NTP aktif tanpa RTC hardware.");
+  }
   printRtcNow();
 }
 
 String getRtcTimestamp() {
-  DateTime now = rtc.now();
+  DateTime now = getCurrentDateTimeWib();
 
   char timeBuffer[25];
   snprintf(timeBuffer, sizeof(timeBuffer), "%04u-%02u-%02u %02u:%02u:%02u",
@@ -397,7 +450,7 @@ String getRtcTimestamp() {
 }
 
 void printRtcNow() {
-  DateTime now = rtc.now();
+  DateTime now = getCurrentDateTimeWib();
   char buf[25];
   snprintf(buf, sizeof(buf), "%04u-%02u-%02u %02u:%02u:%02u",
            now.year(), now.month(), now.day(),
@@ -438,8 +491,15 @@ void handleSerialRtcCalibration() {
       return;
     }
 
-    rtc.adjust(DateTime(year, month, day, hour, minute, second));
-    Serial.println("RTC berhasil dikalibrasi ke WIB.");
+    DateTime calibrated = DateTime(year, month, day, hour, minute, second);
+    fallbackBootTime = calibrated;
+    fallbackBootMs = millis();
+    if (rtcAvailable) {
+      rtc.adjust(calibrated);
+      Serial.println("RTC berhasil dikalibrasi ke WIB.");
+    } else {
+      Serial.println("Waktu fallback berhasil dikalibrasi (tanpa RTC hardware).");
+    }
     printRtcNow();
     return;
   }
@@ -454,14 +514,16 @@ void applyTargetConfig(const String& message) {
   long nextPerHour = parseLongField(message, "targetPerHour", targetPerHour);
   long nextPcs = parseLongField(message, "pcsPerInterval", targetPcsPerInterval);
   long nextSec = parseLongField(message, "intervalSeconds", targetIntervalSeconds);
+  long nextOffset = parseLongField(message, "targetTickerOffset", -1);
 
   if (nextPerHour > 0) targetPerHour = (unsigned long)nextPerHour;
   if (nextPcs > 0) targetPcsPerInterval = (unsigned long)nextPcs;
   if (nextSec > 0) targetIntervalSeconds = (unsigned long)nextSec;
+  if (nextOffset >= 0) targetTickerOffset = (unsigned long)nextOffset;
 }
 
 void resetTargetTickerOffset() {
-  DateTime now = rtc.now();
+  DateTime now = getCurrentDateTimeWib();
   ShiftInfo shift = getShiftInfo(now);
 
   unsigned long intervalCount = (targetIntervalSeconds > 0) ? (shift.elapsedSeconds / targetIntervalSeconds) : 0;
@@ -508,7 +570,7 @@ void showScrollingNumber(const String& text) {
 }
 
 void updateSevenSegmentDisplay() {
-  DateTime now = rtc.now();
+  DateTime now = getCurrentDateTimeWib();
   ShiftInfo shift = getShiftInfo(now);
 
   if (lastShiftName != shift.name) {
@@ -545,9 +607,12 @@ void triggerCounterResetFromButton() {
 void triggerTargetResetFromButton() {
   resetTargetTickerOffset();
   Serial.println("[BTN] Reset target saat ini ditekan.");
+  lastSevenSegUpdateMs = 0;
+  updateSevenSegmentDisplay();
 
   if (client.connected()) {
-    client.publish(mqtt_topic_command, "{\"action\":\"target_ticker_reset\"}");
+    String payload = "{\"action\":\"target_ticker_reset\",\"source\":\"device\",\"targetTickerOffset\":" + String(targetTickerOffset) + "}";
+    client.publish(mqtt_topic_command, payload.c_str());
   }
 }
 
@@ -561,8 +626,12 @@ void handleButtons() {
   }
   if ((nowMs - btnCounterLastChangeMs) >= buttonDebounceMs && btnCounterReading != btnCounterStableState) {
     btnCounterStableState = btnCounterReading;
-    if (btnCounterStableState == LOW) {
+    const bool counterPressed = (btnCounterStableState != btnCounterIdleState);
+    if (counterPressed && !btnCounterPressedLatch) {
+      btnCounterPressedLatch = true;
       triggerCounterResetFromButton();
+    } else if (!counterPressed) {
+      btnCounterPressedLatch = false;
     }
   }
 
@@ -573,8 +642,12 @@ void handleButtons() {
   }
   if ((nowMs - btnTargetLastChangeMs) >= buttonDebounceMs && btnTargetReading != btnTargetStableState) {
     btnTargetStableState = btnTargetReading;
-    if (btnTargetStableState == LOW) {
+    const bool targetPressed = (btnTargetStableState != btnTargetIdleState);
+    if (targetPressed && !btnTargetPressedLatch) {
+      btnTargetPressedLatch = true;
       triggerTargetResetFromButton();
+    } else if (!targetPressed) {
+      btnTargetPressedLatch = false;
     }
   }
 }
@@ -609,6 +682,20 @@ void setup() {
   attachInterrupt(digitalPinToInterrupt(pinRelay), hitungBarang, FALLING);
   pinMode(pinBtnResetCounter, INPUT_PULLUP);
   pinMode(pinBtnResetTarget, INPUT_PULLUP);
+  delay(10);
+  btnCounterIdleState = digitalRead(pinBtnResetCounter);
+  btnCounterLastReading = btnCounterIdleState;
+  btnCounterStableState = btnCounterIdleState;
+  btnCounterPressedLatch = false;
+  btnTargetIdleState = digitalRead(pinBtnResetTarget);
+  btnTargetLastReading = btnTargetIdleState;
+  btnTargetStableState = btnTargetIdleState;
+  btnTargetPressedLatch = false;
+
+  Serial.print("[BTN] Idle reset counter=");
+  Serial.println(btnCounterIdleState == HIGH ? "HIGH" : "LOW");
+  Serial.print("[BTN] Idle reset target=");
+  Serial.println(btnTargetIdleState == HIGH ? "HIGH" : "LOW");
 }
 
 void loop() {

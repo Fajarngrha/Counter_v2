@@ -1,11 +1,35 @@
 const mqtt = require('mqtt');
 const config = require('../config');
-const { applyDeviceCounter } = require('./counterService');
+const { applyDeviceCounter, resetTargetTicker } = require('./counterService');
+const { getState } = require('../db/database');
 
 let client = null;
 let connected = false;
 let broadcastFn = null;
 let latestTargetConfig = null;
+
+function resolveTargetTickerOffset(explicitOffset) {
+  if (Number.isFinite(explicitOffset)) {
+    return Math.max(0, Math.floor(explicitOffset));
+  }
+
+  const state = getState();
+  const persistedOffset = Number(state?.target_ticker_offset);
+  if (Number.isFinite(persistedOffset)) {
+    return Math.max(0, Math.floor(persistedOffset));
+  }
+
+  return 0;
+}
+
+function normalizeTargetConfig(target, explicitOffset) {
+  return {
+    targetPerHour: Number(target?.target_per_hour ?? target?.targetPerHour) || 0,
+    pcsPerInterval: Number(target?.pcs_per_interval ?? target?.pcsPerInterval) || 0,
+    intervalSeconds: Number(target?.interval_seconds ?? target?.intervalSeconds) || 0,
+    targetTickerOffset: resolveTargetTickerOffset(explicitOffset ?? target?.targetTickerOffset),
+  };
+}
 
 function parseSensorPayload(raw) {
   const payload = raw.toString().trim();
@@ -38,6 +62,17 @@ function parseSensorPayload(raw) {
   return { counter: Math.floor(counter), waktu };
 }
 
+function parseCommandPayload(raw) {
+  const payload = raw.toString().trim();
+  try {
+    const parsed = JSON.parse(payload);
+    if (parsed && typeof parsed === 'object') return parsed;
+  } catch {
+    // ignore parse error and fallback below
+  }
+  return { action: payload };
+}
+
 function initMqtt(broadcast) {
   broadcastFn = broadcast;
 
@@ -61,6 +96,12 @@ function initMqtt(broadcast) {
       if (err) console.error('[MQTT] Gagal subscribe:', err.message);
       else console.log(`[MQTT] Subscribe ke topik: ${config.mqtt.topic}`);
     });
+    if (config.mqtt.commandTopic && config.mqtt.commandTopic !== config.mqtt.topic) {
+      client.subscribe(config.mqtt.commandTopic, (err) => {
+        if (err) console.error('[MQTT] Gagal subscribe command topic:', err.message);
+        else console.log(`[MQTT] Subscribe ke topik command: ${config.mqtt.commandTopic}`);
+      });
+    }
     if (latestTargetConfig) {
       publishTargetConfig(latestTargetConfig);
     }
@@ -68,6 +109,19 @@ function initMqtt(broadcast) {
 
   client.on('message', (topic, message) => {
     try {
+      if (topic === config.mqtt.commandTopic) {
+        const command = parseCommandPayload(message);
+        const action = String(command.action || '').toLowerCase();
+        const source = String(command.source || '').toLowerCase();
+
+        if (action === 'target_ticker_reset' && source !== 'server') {
+          const data = resetTargetTicker();
+          publishTargetTickerReset({ targetTickerOffset: getState().target_ticker_offset });
+          if (broadcastFn) broadcastFn(data);
+        }
+        return;
+      }
+
       const { counter, waktu } = parseSensorPayload(message);
       const data = applyDeviceCounter(counter, waktu);
       if (broadcastFn) broadcastFn(data);
@@ -105,20 +159,17 @@ function publishDeviceReset() {
   return true;
 }
 
-function publishTargetConfig(target) {
+function publishTargetConfig(target, options = {}) {
   if (!target) return false;
 
-  latestTargetConfig = {
-    targetPerHour: Number(target.target_per_hour) || 0,
-    pcsPerInterval: Number(target.pcs_per_interval) || 0,
-    intervalSeconds: Number(target.interval_seconds) || 0,
-  };
+  latestTargetConfig = normalizeTargetConfig(target, options.targetTickerOffset);
 
   if (!client || !connected) return false;
 
   const topic = config.mqtt.commandTopic;
   const payload = JSON.stringify({
     action: 'target_config',
+    source: 'server',
     ...latestTargetConfig,
   });
 
@@ -127,12 +178,17 @@ function publishTargetConfig(target) {
   return true;
 }
 
-function publishTargetTickerReset() {
+function publishTargetTickerReset(options = {}) {
   if (!client || !connected) return false;
 
   const topic = config.mqtt.commandTopic;
-  client.publish(topic, JSON.stringify({ action: 'target_ticker_reset' }));
-  console.log(`[MQTT] Perintah reset target ticker dikirim ke ${topic}`);
+  const payload = JSON.stringify({
+    action: 'target_ticker_reset',
+    source: 'server',
+    targetTickerOffset: resolveTargetTickerOffset(options.targetTickerOffset),
+  });
+  client.publish(topic, payload);
+  console.log(`[MQTT] Perintah reset target ticker dikirim ke ${topic}: ${payload}`);
   return true;
 }
 
