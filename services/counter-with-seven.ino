@@ -39,9 +39,10 @@ const char* mqtt_topic_command = "iot/counter/command";
 const long gmtOffsetSeconds = 7 * 3600; // WIB UTC+7
 const int daylightOffsetSeconds = 0;
 
-const int pinRelay = 5;
-// Hindari pin strapping saat boot (terutama GPIO2/8/9) agar upload stabil.
-const int pinBtnResetCounter = 0;
+// Pin counter/relay dipindah dari GPIO5 agar GPIO5 bisa dipakai TM1637 DIO (pin yang sudah terbukti hidup saat test).
+const int pinRelay = 10;
+// Tombol reset counter dipindah ke GPIO19 (lebih aman dari pin strapping/boot).
+const int pinBtnResetCounter = 19;
 const int pinBtnResetTarget = 3;
 
 // I2C untuk DS3231-PRO (dipindah dari 8/9 ke 6/7 agar tidak ganggu mode upload)
@@ -51,7 +52,7 @@ const int rtcSclPin = 7;
 // TM1637 seven segment
 const int sevenSegClkPin = 4;
 // Gunakan pin aman yang terlihat tersedia di board (hindari UART/strap pin).
-const int sevenSegDioPin = 18;
+const int sevenSegDioPin = 5;
 
 RTC_DS3231 rtc;
 TM1637Display display(sevenSegClkPin, sevenSegDioPin);
@@ -82,6 +83,7 @@ const unsigned long sevenSegScrollIntervalMs = 450;
 int sevenSegScrollIndex = 0;
 String sevenSegLastText = "";
 const unsigned long buttonDebounceMs = 60;
+const bool counterButtonActiveLow = true;
 bool btnCounterLastReading = HIGH;
 bool btnCounterStableState = HIGH;
 bool btnCounterIdleState = HIGH;
@@ -105,6 +107,9 @@ void resetTargetTickerOffset();
 void handleSerialRtcCalibration();
 void printRtcNow();
 void syncRtcFromNtpWib();
+bool setup_wifi(unsigned long timeoutMs = 15000);
+void sevenSegAllOn();
+void showSevenSegStatus(int code);
 void updateSevenSegmentDisplay();
 void showNumberOnSevenSeg(unsigned long value);
 void showScrollingNumber(const String& text);
@@ -181,7 +186,7 @@ void IRAM_ATTR hitungBarang() {
   }
 }
 
-void setup_wifi() {
+bool setup_wifi(unsigned long timeoutMs) {
   delay(10);
   Serial.print("Menghubungkan ke WiFi: ");
   Serial.println(ssid);
@@ -189,14 +194,30 @@ void setup_wifi() {
   WiFi.mode(WIFI_STA);
   WiFi.begin(ssid, password);
 
-  while (WiFi.status() != WL_CONNECTED) {
+  const unsigned long startMs = millis();
+  int dots = 0;
+
+  while (WiFi.status() != WL_CONNECTED && (millis() - startMs) < timeoutMs) {
     delay(500);
     Serial.print(".");
+
+    // Tampilkan animasi supaya TM1637 tidak terlihat mati saat menunggu WiFi.
+    dots = (dots + 1) % 4;
+    display.showNumberDecEx(3333, dots == 0 ? 0x00 : 0x40, true, 4, 0);
   }
 
-  Serial.println("\nWiFi Terhubung!");
-  Serial.print("IP ESP32: ");
-  Serial.println(WiFi.localIP());
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.println("\nWiFi Terhubung!");
+    Serial.print("IP ESP32: ");
+    Serial.println(WiFi.localIP());
+    showSevenSegStatus(4444);
+    return true;
+  }
+
+  Serial.println("\nWiFi gagal tersambung dalam batas waktu. Sistem tetap lanjut tanpa WiFi.");
+  showSevenSegStatus(4040);
+  delay(1000);
+  return false;
 }
 
 bool reconnectMqtt() {
@@ -534,8 +555,19 @@ void resetTargetTickerOffset() {
   targetTickerOffset = rawTarget;
 }
 
+void sevenSegAllOn() {
+  uint8_t allOn[] = {0xff, 0xff, 0xff, 0xff};
+  display.setSegments(allOn);
+}
+
+void showSevenSegStatus(int code) {
+  display.setBrightness(7, true);
+  display.showNumberDec(code, true, 4, 0);
+}
+
 void showNumberOnSevenSeg(unsigned long value) {
-  display.showNumberDec((int)value, false, 4, 0);
+  // true = tampilkan leading zero, jadi nilai 0 terlihat sebagai 0000 dan tidak dikira mati.
+  display.showNumberDec((int)value, true, 4, 0);
 }
 
 void showScrollingNumber(const String& text) {
@@ -600,7 +632,7 @@ void triggerCounterResetFromButton() {
   publishCounterSnapshot();
 
   if (client.connected()) {
-    client.publish(mqtt_topic_command, "{\"action\":\"reset\"}");
+    client.publish(mqtt_topic_command, "{\"action\":\"reset\",\"source\":\"device\"}");
   }
 }
 
@@ -626,7 +658,9 @@ void handleButtons() {
   }
   if ((nowMs - btnCounterLastChangeMs) >= buttonDebounceMs && btnCounterReading != btnCounterStableState) {
     btnCounterStableState = btnCounterReading;
-    const bool counterPressed = (btnCounterStableState != btnCounterIdleState);
+    const bool counterPressed = counterButtonActiveLow
+      ? (btnCounterStableState == LOW)
+      : (btnCounterStableState == HIGH);
     if (counterPressed && !btnCounterPressedLatch) {
       btnCounterPressedLatch = true;
       triggerCounterResetFromButton();
@@ -657,19 +691,41 @@ void setup() {
   delay(2000);
   Serial.println("\n--- Sistem Smart Counter (Seven Segment + DS3231) Memulai ---");
 
+  // ============================================================
+  // TEST TM1637 PALING AWAL
+  // Jika bagian ini tidak muncul, masalahnya wiring/pin/power TM1637,
+  // bukan RTC, WiFi, atau MQTT.
+  // ============================================================
+  display.setBrightness(7, true);
+  sevenSegAllOn();
+  delay(3000);
+
+  showSevenSegStatus(1111);
+  delay(1000);
+
+  // ============================================================
+  // RTC
+  // ============================================================
   initRtc();
+  showSevenSegStatus(2222);
+  delay(700);
+
   printRtcNow();
   Serial.println("Kalibrasi RTC via Serial:");
   Serial.println("  SHOWWIB");
   Serial.println("  SETWIB YYYY-MM-DD HH:MM:SS");
 
-  display.setBrightness(0x0f, true);
-  display.showNumberDec(8888, false, 4, 0);
-  delay(700);
-  display.clear();
+  // ============================================================
+  // WiFi: tidak blocking selamanya. Kalau gagal, sistem tetap jalan.
+  // ============================================================
+  showSevenSegStatus(3333);
+  bool wifiOk = setup_wifi(15000);
 
-  setup_wifi();
-  syncRtcFromNtpWib();
+  if (wifiOk) {
+    syncRtcFromNtpWib();
+  } else {
+    Serial.println("Lewati sinkron NTP karena WiFi belum tersambung.");
+  }
 
 #if USE_HIVEMQ_CLOUD
   espClient.setInsecure(); // uji awal HiveMQ; production: pakai CA cert
@@ -678,15 +734,23 @@ void setup() {
   client.setServer(mqtt_server, mqtt_port);
   client.setCallback(mqttCallback);
 
+  // ============================================================
+  // Input counter dan tombol
+  // Catatan: pinRelay sekarang GPIO10 supaya GPIO5 bebas untuk TM1637 DIO.
+  // Pindahkan kabel sensor/counter dari GPIO5 ke GPIO10.
+  // ============================================================
   pinMode(pinRelay, INPUT_PULLUP);
   attachInterrupt(digitalPinToInterrupt(pinRelay), hitungBarang, FALLING);
+
   pinMode(pinBtnResetCounter, INPUT_PULLUP);
   pinMode(pinBtnResetTarget, INPUT_PULLUP);
   delay(10);
+
   btnCounterIdleState = digitalRead(pinBtnResetCounter);
   btnCounterLastReading = btnCounterIdleState;
   btnCounterStableState = btnCounterIdleState;
   btnCounterPressedLatch = false;
+
   btnTargetIdleState = digitalRead(pinBtnResetTarget);
   btnTargetLastReading = btnTargetIdleState;
   btnTargetStableState = btnTargetIdleState;
@@ -694,23 +758,42 @@ void setup() {
 
   Serial.print("[BTN] Idle reset counter=");
   Serial.println(btnCounterIdleState == HIGH ? "HIGH" : "LOW");
+  Serial.print("[BTN] Pin reset counter=GPIO");
+  Serial.println(pinBtnResetCounter);
+  Serial.println("[BTN] Mode reset counter=ACTIVE LOW (tekan ke GND)");
   Serial.print("[BTN] Idle reset target=");
   Serial.println(btnTargetIdleState == HIGH ? "HIGH" : "LOW");
+
+  showSevenSegStatus(5555);
+  delay(1200);
+  lastSevenSegUpdateMs = 0;
+  updateSevenSegmentDisplay();
 }
 
 void loop() {
   handleSerialRtcCalibration();
   handleButtons();
 
-  // Jaga koneksi MQTT non-blocking
-  if (!client.connected()) {
-    unsigned long nowMs = millis();
-    if (nowMs - lastMqttReconnectAttempt > 5000) {
-      lastMqttReconnectAttempt = nowMs;
-      reconnectMqtt();
+  // Coba konek ulang WiFi secara ringan jika sebelumnya gagal/terputus.
+  static unsigned long lastWifiReconnectAttempt = 0;
+  if (WiFi.status() != WL_CONNECTED && millis() - lastWifiReconnectAttempt > 30000) {
+    lastWifiReconnectAttempt = millis();
+    Serial.println("WiFi terputus/belum terhubung, coba konek ulang...");
+    WiFi.disconnect(false);
+    WiFi.begin(ssid, password);
+  }
+
+  // Jaga koneksi MQTT non-blocking. MQTT hanya dicoba jika WiFi sudah terhubung.
+  if (WiFi.status() == WL_CONNECTED) {
+    if (!client.connected()) {
+      unsigned long nowMs = millis();
+      if (nowMs - lastMqttReconnectAttempt > 5000) {
+        lastMqttReconnectAttempt = nowMs;
+        reconnectMqtt();
+      }
+    } else {
+      client.loop();
     }
-  } else {
-    client.loop();
   }
 
   unsigned long snapshotCounter;

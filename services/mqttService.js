@@ -1,6 +1,6 @@
 const mqtt = require('mqtt');
 const config = require('../config');
-const { applyDeviceCounter, resetTargetTicker } = require('./counterService');
+const { applyDeviceCounter, resetTargetTicker, resetCounter } = require('./counterService');
 const { getState } = require('../db/database');
 
 let client = null;
@@ -73,6 +73,11 @@ function parseCommandPayload(raw) {
   return { action: payload };
 }
 
+function isCommandAction(action) {
+  const normalized = String(action || '').toLowerCase();
+  return normalized === 'reset' || normalized === 'target_ticker_reset' || normalized === 'target_config';
+}
+
 function initMqtt(broadcast) {
   broadcastFn = broadcast;
 
@@ -109,10 +114,18 @@ function initMqtt(broadcast) {
 
   client.on('message', (topic, message) => {
     try {
-      if (topic === config.mqtt.commandTopic) {
-        const command = parseCommandPayload(message);
-        const action = String(command.action || '').toLowerCase();
-        const source = String(command.source || '').toLowerCase();
+      const command = parseCommandPayload(message);
+      const action = String(command.action || '').toLowerCase();
+      const source = String(command.source || '').toLowerCase();
+      const shouldTreatAsCommand = topic === config.mqtt.commandTopic || isCommandAction(action);
+
+      if (shouldTreatAsCommand) {
+        if (action === 'reset' && source !== 'server') {
+          const data = resetCounter();
+          publishDeviceReset();
+          console.log(`[MQTT] Reset counter dari device diproses (topic=${topic}).`);
+          if (broadcastFn) broadcastFn(data);
+        }
 
         if (action === 'target_ticker_reset' && source !== 'server') {
           const data = resetTargetTicker();
@@ -154,8 +167,9 @@ function publishDeviceReset() {
   if (!client || !connected) return false;
 
   const topic = config.mqtt.commandTopic;
-  client.publish(topic, JSON.stringify({ action: 'reset' }));
-  console.log(`[MQTT] Perintah reset dikirim ke ${topic}`);
+  const payload = JSON.stringify({ action: 'reset', source: 'server' });
+  client.publish(topic, payload);
+  console.log(`[MQTT] Perintah reset dikirim ke ${topic}: ${payload}`);
   return true;
 }
 
