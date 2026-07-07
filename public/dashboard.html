@@ -50,11 +50,19 @@
       </div>
 
       <div class="card">
-        <div class="card-label">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-            <path d="M9 18l6-6-6-6"></path>
-          </svg>
-          Status Shift
+        <div class="card-label card-label--with-action">
+          <div class="card-label-main">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+              <path d="M9 18l6-6-6-6"></path>
+            </svg>
+            Status Shift
+          </div>
+          <button id="btnEditShift" class="btn-icon" type="button" title="Edit jadwal shift">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 20h9"></path>
+              <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"></path>
+            </svg>
+          </button>
         </div>
         <div id="shiftLabel" class="status-value" style="font-size: 1.2rem;">-</div>
         <div id="shiftRange" class="status-sub">-</div>
@@ -161,7 +169,7 @@
               <div class="value green"><span id="targetPerHour">-</span> <span class="unit">pcs</span></div>
             </div>
             <div class="target-item">
-              <div class="label">Target / Shift (<span id="shiftHours">-</span>h)</div>
+              <div class="label">Target / Shift</div>
               <div class="value green"><span id="targetPerShift">-</span> <span class="unit">pcs</span></div>
             </div>
             <div class="target-item">
@@ -210,6 +218,40 @@
       <div class="modal-actions">
         <button id="btnCancelTargetPassword" class="btn btn-ghost" type="button">Batal</button>
         <button id="btnConfirmTargetPassword" class="btn btn-success" type="button">Simpan</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="shiftConfigModal" class="modal-overlay hidden">
+    <div class="modal">
+      <h3>Edit Jadwal Shift</h3>
+      <div class="shift-edit-grid">
+        <div class="shift-edit-row">
+          <div class="shift-edit-name">Shift 1</div>
+          <label for="inpShift1Start">Mulai</label>
+          <input id="inpShift1Start" type="time" step="60">
+          <label for="inpShift1End">Selesai</label>
+          <input id="inpShift1End" type="time" step="60">
+        </div>
+        <div class="shift-edit-row">
+          <div class="shift-edit-name">Shift 2</div>
+          <label for="inpShift2Start">Mulai</label>
+          <input id="inpShift2Start" type="time" step="60">
+          <label for="inpShift2End">Selesai</label>
+          <input id="inpShift2End" type="time" step="60">
+        </div>
+        <div class="shift-edit-row">
+          <div class="shift-edit-name">Shift 3</div>
+          <label for="inpShift3Start">Mulai</label>
+          <input id="inpShift3Start" type="time" step="60">
+          <label for="inpShift3End">Selesai</label>
+          <input id="inpShift3End" type="time" step="60">
+        </div>
+      </div>
+      <div class="status-sub">Gunakan format 24 jam. Shift boleh melewati tengah malam.</div>
+      <div class="modal-actions">
+        <button id="btnCancelShiftConfig" class="btn btn-ghost" type="button">Batal</button>
+        <button id="btnSaveShiftConfig" class="btn btn-success" type="button">Simpan</button>
       </div>
     </div>
   </div>

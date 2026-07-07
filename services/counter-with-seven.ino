@@ -16,8 +16,8 @@
 // ============================================================
 // WIFI
 // ============================================================
-const char* ssid = "ARRAZKA 2 LANTAI 2";
-const char* password = "Razka1109";
+const char* ssid = "FID";
+const char* password = "FCC_2022#idn";
 
 // ============================================================
 // MQTT — HiveMQ Cloud (isi dari dashboard HiveMQ)
@@ -65,6 +65,12 @@ unsigned long lastCounterSent = 0;
 
 volatile unsigned long lastDebounceTime = 0;
 const unsigned long debounceDelay = 300; // ms
+volatile bool counterEdgePending = false;
+volatile unsigned long counterEdgeUs = 0;
+bool counterInputArmed = true;
+unsigned long lastCounterAcceptedMs = 0;
+const unsigned long counterConfirmUs = 3000;     // 3ms verifikasi level LOW
+const unsigned long counterMinIntervalMs = 120;  // anti multi-count karena chatter/noise
 
 portMUX_TYPE mux = portMUX_INITIALIZER_UNLOCKED;
 
@@ -117,6 +123,7 @@ void handleButtons();
 void triggerCounterResetFromButton();
 void triggerTargetResetFromButton();
 DateTime getCurrentDateTimeWib();
+void processCounterInput();
 
 struct ShiftInfo {
   const char* name;
@@ -179,10 +186,11 @@ long parseLongField(const String& json, const char* key, long fallbackValue) {
 }
 
 void IRAM_ATTR hitungBarang() {
-  unsigned long currentTime = millis();
-  if ((currentTime - lastDebounceTime) > debounceDelay) {
-    totalCounter++;
-    lastDebounceTime = currentTime;
+  const unsigned long nowUs = micros();
+  // Catat edge saja di ISR. Validasi pulse dilakukan di loop agar lebih tahan noise.
+  if (!counterEdgePending) {
+    counterEdgePending = true;
+    counterEdgeUs = nowUs;
   }
 }
 
@@ -627,6 +635,11 @@ void triggerCounterResetFromButton() {
   portEXIT_CRITICAL(&mux);
   lastCounterSent = 0;
   lastDebounceTime = millis();
+  lastCounterAcceptedMs = millis();
+  counterInputArmed = true;
+  noInterrupts();
+  counterEdgePending = false;
+  interrupts();
 
   Serial.println("[BTN] Reset counter aktual ditekan.");
   publishCounterSnapshot();
@@ -634,6 +647,38 @@ void triggerCounterResetFromButton() {
   if (client.connected()) {
     client.publish(mqtt_topic_command, "{\"action\":\"reset\",\"source\":\"device\"}");
   }
+}
+
+void processCounterInput() {
+  // Re-arm setelah input kembali HIGH (kontak relay lepas).
+  if (!counterInputArmed && digitalRead(pinRelay) == HIGH) {
+    counterInputArmed = true;
+  }
+
+  bool pending = false;
+  unsigned long edgeUs = 0;
+  noInterrupts();
+  pending = counterEdgePending;
+  edgeUs = counterEdgeUs;
+  interrupts();
+  if (!pending) return;
+
+  // Tunggu beberapa ms untuk memastikan edge bukan spike/noise singkat.
+  if ((micros() - edgeUs) < counterConfirmUs) return;
+
+  const bool stillLow = (digitalRead(pinRelay) == LOW);
+  const unsigned long nowMs = millis();
+  if (stillLow && counterInputArmed && (nowMs - lastCounterAcceptedMs) >= counterMinIntervalMs) {
+    portENTER_CRITICAL(&mux);
+    totalCounter++;
+    portEXIT_CRITICAL(&mux);
+    lastCounterAcceptedMs = nowMs;
+    counterInputArmed = false; // 1 cycle = 1 count, tunggu lepas dulu
+  }
+
+  noInterrupts();
+  counterEdgePending = false;
+  interrupts();
 }
 
 void triggerTargetResetFromButton() {
@@ -772,6 +817,7 @@ void setup() {
 
 void loop() {
   handleSerialRtcCalibration();
+  processCounterInput();
   handleButtons();
 
   // Coba konek ulang WiFi secara ringan jika sebelumnya gagal/terputus.

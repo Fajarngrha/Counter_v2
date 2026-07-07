@@ -11,6 +11,7 @@ const {
   resetCounter,
   resetTargetTicker,
 } = require('./services/counterService');
+const { getShiftConfig, setShiftConfig } = require('./services/shiftService');
 const {
   initMqtt,
   publishDeviceReset,
@@ -85,6 +86,10 @@ app.get('/api/target', requireAuth, (req, res) => {
   res.json(getTarget());
 });
 
+app.get('/api/shifts', requireAuth, (req, res) => {
+  res.json({ shifts: getShiftConfig() });
+});
+
 app.post('/api/counter/reset', requireAuth, (req, res) => {
   publishDeviceReset();
   const data = resetCounter();
@@ -117,6 +122,22 @@ app.put('/api/target', requireAuth, (req, res) => {
   const target = getTarget();
   publishTargetConfig(target, { targetTickerOffset: getState().target_ticker_offset });
   res.json(target);
+});
+
+app.put('/api/shifts', requireAuth, (req, res) => {
+  const { shifts, editPassword } = req.body || {};
+  if (!editPassword || editPassword !== config.auth.password) {
+    return res.status(403).json({ error: 'Password validasi salah' });
+  }
+
+  try {
+    const updated = setShiftConfig(shifts);
+    const data = getDashboardData();
+    broadcastDashboard(data);
+    return res.json({ shifts: updated, dashboard: data });
+  } catch (err) {
+    return res.status(400).json({ error: err.message || 'Konfigurasi shift tidak valid' });
+  }
 });
 
 app.get('/api/session', (req, res) => {

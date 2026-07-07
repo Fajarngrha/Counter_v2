@@ -96,7 +96,7 @@ function nowIso() {
 function normalizeHistoryRow(row, fallbackTarget) {
   const duration = row.shift_duration_hours || getShiftDurationHours(row.shift);
   const targetPerHour = row.target_per_hour ?? fallbackTarget.target_per_hour;
-  const targetPerShift = row.target_per_shift ?? targetPerHour * duration;
+  const targetPerShift = row.target_per_shift ?? Math.round(targetPerHour * duration);
   const achievement = targetPerShift > 0
     ? Math.round((row.total_barang / targetPerShift) * 100)
     : 0;
@@ -196,7 +196,7 @@ function buildTargetSnapshot(target, shiftName) {
   const targetPerHour = target.target_per_hour;
   return {
     target_per_hour: targetPerHour,
-    target_per_shift: targetPerHour * durationHours,
+    target_per_shift: Math.round(targetPerHour * durationHours),
     model: target.model || '-',
     pcs_per_interval: target.pcs_per_interval,
     interval_seconds: target.interval_seconds,

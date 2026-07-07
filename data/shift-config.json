@@ -1,0 +1,26 @@
+[
+  {
+    "name": "Shift 1",
+    "startHour": 7,
+    "startMin": 15,
+    "endHour": 15,
+    "endMin": 50,
+    "durationHours": 8.583333333333334
+  },
+  {
+    "name": "Shift 2",
+    "startHour": 16,
+    "startMin": 15,
+    "endHour": 23,
+    "endMin": 50,
+    "durationHours": 7.583333333333333
+  },
+  {
+    "name": "Shift 3",
+    "startHour": 0,
+    "startMin": 15,
+    "endHour": 6,
+    "endMin": 50,
+    "durationHours": 6.583333333333333
+  }
+]

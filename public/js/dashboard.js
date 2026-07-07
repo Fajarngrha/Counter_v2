@@ -145,12 +145,84 @@ function setEditMode(active) {
   el('targetActionsEdit').classList.toggle('hidden', !active);
 }
 
-function requestTargetPassword() {
+function toTimeInputValue(hour, minute) {
+  return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+}
+
+function parseTimeInput(value) {
+  const text = String(value || '').trim();
+  const matched = text.match(/^(\d{2}):(\d{2})$/);
+  if (!matched) return null;
+  const hour = Number(matched[1]);
+  const minute = Number(matched[2]);
+  if (!Number.isInteger(hour) || !Number.isInteger(minute)) return null;
+  if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return null;
+  return { hour, minute };
+}
+
+async function fetchShiftConfig() {
+  const data = await fetchJson('/api/shifts');
+  return data.shifts || [];
+}
+
+function populateShiftForm(shifts) {
+  const byName = Object.fromEntries((shifts || []).map((s) => [s.name, s]));
+  const s1 = byName['Shift 1'] || { startHour: 7, startMin: 0, endHour: 16, endMin: 0 };
+  const s2 = byName['Shift 2'] || { startHour: 16, startMin: 0, endHour: 23, endMin: 0 };
+  const s3 = byName['Shift 3'] || { startHour: 23, startMin: 0, endHour: 7, endMin: 0 };
+
+  el('inpShift1Start').value = toTimeInputValue(s1.startHour, s1.startMin);
+  el('inpShift1End').value = toTimeInputValue(s1.endHour, s1.endMin);
+  el('inpShift2Start').value = toTimeInputValue(s2.startHour, s2.startMin);
+  el('inpShift2End').value = toTimeInputValue(s2.endHour, s2.endMin);
+  el('inpShift3Start').value = toTimeInputValue(s3.startHour, s3.startMin);
+  el('inpShift3End').value = toTimeInputValue(s3.endHour, s3.endMin);
+}
+
+function collectShiftForm() {
+  const rows = [
+    { name: 'Shift 1', start: el('inpShift1Start').value, end: el('inpShift1End').value },
+    { name: 'Shift 2', start: el('inpShift2Start').value, end: el('inpShift2End').value },
+    { name: 'Shift 3', start: el('inpShift3Start').value, end: el('inpShift3End').value },
+  ];
+
+  return rows.map((row) => {
+    const start = parseTimeInput(row.start);
+    const end = parseTimeInput(row.end);
+    if (!start || !end) {
+      throw new Error(`Jam ${row.name} belum valid. Gunakan format HH:MM.`);
+    }
+    return {
+      name: row.name,
+      startHour: start.hour,
+      startMin: start.minute,
+      endHour: end.hour,
+      endMin: end.minute,
+    };
+  });
+}
+
+function showShiftModal(show) {
+  const overlay = el('shiftConfigModal');
+  if (!overlay) return;
+  overlay.classList.toggle('hidden', !show);
+  overlay.classList.toggle('show', show);
+}
+
+function requestTargetPassword(options = {}) {
   return new Promise((resolve) => {
     const overlay = el('targetPasswordModal');
     const input = el('inpModalTargetPassword');
     const btnConfirm = el('btnConfirmTargetPassword');
     const btnCancel = el('btnCancelTargetPassword');
+    const titleEl = overlay?.querySelector('h3');
+    const labelEl = overlay?.querySelector('label[for="inpModalTargetPassword"]');
+    const defaultTitle = titleEl?.textContent || 'Validasi Simpan Target';
+    const defaultLabel = labelEl?.textContent || 'Password';
+    const defaultPlaceholder = input?.placeholder || 'Masukkan password validasi';
+    const title = options.title || defaultTitle;
+    const label = options.label || defaultLabel;
+    const placeholder = options.placeholder || defaultPlaceholder;
 
     if (!overlay || !input || !btnConfirm || !btnCancel) {
       resolve((window.prompt('Masukkan password validasi untuk menyimpan perubahan target:') || '').trim());
@@ -164,6 +236,9 @@ function requestTargetPassword() {
       btnCancel.removeEventListener('click', onCancel);
       overlay.removeEventListener('click', onOverlayClick);
       input.removeEventListener('keydown', onInputKeydown);
+      if (titleEl) titleEl.textContent = defaultTitle;
+      if (labelEl) labelEl.textContent = defaultLabel;
+      input.placeholder = defaultPlaceholder;
       resolve(value);
     };
 
@@ -183,6 +258,9 @@ function requestTargetPassword() {
     };
 
     input.value = '';
+    if (titleEl) titleEl.textContent = title;
+    if (labelEl) labelEl.textContent = label;
+    input.placeholder = placeholder;
     overlay.classList.remove('hidden');
     overlay.classList.add('show');
     btnConfirm.addEventListener('click', onConfirm);
@@ -225,7 +303,6 @@ function render(data) {
 
   el('targetPerHour').textContent = fmtNumber(data.target?.perHour);
   el('targetModel').textContent = targetModel;
-  el('shiftHours').textContent = data.shift?.durationHours ?? '-';
   el('targetPerShift').textContent = fmtNumber(data.target?.perShift);
   el('currentRate').textContent = fmtNumber(data.analytics?.currentRate);
   el('projection').textContent = fmtNumber(data.analytics?.projection);
@@ -337,6 +414,46 @@ async function init() {
       alert(err.message);
     } finally {
       el('btnResetTargetTicker').disabled = false;
+    }
+  });
+
+  el('btnEditShift').addEventListener('click', async () => {
+    try {
+      const shifts = await fetchShiftConfig();
+      populateShiftForm(shifts);
+      showShiftModal(true);
+    } catch (err) {
+      alert(err.message);
+    }
+  });
+
+  el('btnCancelShiftConfig').addEventListener('click', () => {
+    showShiftModal(false);
+  });
+
+  el('shiftConfigModal').addEventListener('click', (ev) => {
+    if (ev.target === el('shiftConfigModal')) {
+      showShiftModal(false);
+    }
+  });
+
+  el('btnSaveShiftConfig').addEventListener('click', async () => {
+    try {
+      const shifts = collectShiftForm();
+      const editPassword = await requestTargetPassword({
+        title: 'Validasi Simpan Jadwal Shift',
+        label: 'Password',
+        placeholder: 'Masukkan password untuk simpan jadwal shift',
+      });
+      if (!editPassword) {
+        alert('Simpan jadwal shift dibatalkan. Password wajib diisi.');
+        return;
+      }
+      const res = await putJson('/api/shifts', { shifts, editPassword });
+      showShiftModal(false);
+      render(res.dashboard || await fetchJson('/api/dashboard'));
+    } catch (err) {
+      alert(err.message);
     }
   });
 

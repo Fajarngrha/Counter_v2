@@ -1,10 +1,93 @@
+const fs = require('fs');
+const path = require('path');
 const config = require('../config');
 
-const SHIFTS = [
-  { name: 'Shift 1', startHour: 7, startMin: 0, endHour: 16, endMin: 0, durationHours: 9 },
-  { name: 'Shift 2', startHour: 16, startMin: 0, endHour: 23, endMin: 0, durationHours: 7 },
-  { name: 'Shift 3', startHour: 23, startMin: 0, endHour: 7, endMin: 0, durationHours: 8 },
+const DEFAULT_SHIFTS = [
+  { name: 'Shift 1', startHour: 7, startMin: 15, endHour: 15, endMin: 50 },
+  { name: 'Shift 2', startHour: 16, startMin: 15, endHour: 23, endMin: 50 },
+  { name: 'Shift 3', startHour: 0, startMin: 15, endHour: 6, endMin: 50 },
 ];
+
+const dataDir = path.join(__dirname, '..', 'data');
+const shiftConfigPath = path.join(dataDir, 'shift-config.json');
+const SHIFT_NAMES = new Set(['Shift 1', 'Shift 2', 'Shift 3']);
+
+function toMinutes(hour, minute) {
+  return hour * 60 + minute;
+}
+
+function calcDurationHours(shift) {
+  const start = toMinutes(shift.startHour, shift.startMin);
+  const end = toMinutes(shift.endHour, shift.endMin);
+  const durationMinutes = end > start ? (end - start) : (24 * 60 - start + end);
+  return durationMinutes / 60;
+}
+
+function normalizeShift(shift) {
+  return {
+    name: shift.name,
+    startHour: shift.startHour % 24,
+    startMin: shift.startMin,
+    endHour: shift.endHour % 24,
+    endMin: shift.endMin,
+    durationHours: calcDurationHours(shift),
+  };
+}
+
+function validateShiftInput(shifts) {
+  if (!Array.isArray(shifts) || shifts.length !== 3) {
+    throw new Error('Konfigurasi shift harus berisi 3 shift.');
+  }
+
+  const names = new Set(shifts.map((s) => s.name));
+  if (names.size !== 3 || ![...names].every((name) => SHIFT_NAMES.has(name))) {
+    throw new Error('Nama shift wajib: Shift 1, Shift 2, Shift 3.');
+  }
+
+  for (const shift of shifts) {
+    const nums = [shift.startHour, shift.startMin, shift.endHour, shift.endMin];
+    if (nums.some((n) => !Number.isInteger(n))) {
+      throw new Error(`Jam shift ${shift.name} tidak valid.`);
+    }
+    if (shift.startHour < 0 || shift.startHour > 23 || shift.endHour < 0 || shift.endHour > 23) {
+      throw new Error(`Jam shift ${shift.name} harus 00-23.`);
+    }
+    if (shift.startMin < 0 || shift.startMin > 59 || shift.endMin < 0 || shift.endMin > 59) {
+      throw new Error(`Menit shift ${shift.name} harus 00-59.`);
+    }
+    if (shift.startHour === shift.endHour && shift.startMin === shift.endMin) {
+      throw new Error(`Start dan end ${shift.name} tidak boleh sama.`);
+    }
+  }
+}
+
+function loadShiftConfig() {
+  if (!fs.existsSync(dataDir)) {
+    fs.mkdirSync(dataDir, { recursive: true });
+  }
+
+  if (!fs.existsSync(shiftConfigPath)) {
+    const initial = DEFAULT_SHIFTS.map(normalizeShift);
+    fs.writeFileSync(shiftConfigPath, JSON.stringify(initial, null, 2), 'utf-8');
+    return initial;
+  }
+
+  try {
+    const parsed = JSON.parse(fs.readFileSync(shiftConfigPath, 'utf-8'));
+    validateShiftInput(parsed);
+    return parsed.map(normalizeShift);
+  } catch {
+    const fallback = DEFAULT_SHIFTS.map(normalizeShift);
+    fs.writeFileSync(shiftConfigPath, JSON.stringify(fallback, null, 2), 'utf-8');
+    return fallback;
+  }
+}
+
+function persistShiftConfig(shifts) {
+  fs.writeFileSync(shiftConfigPath, JSON.stringify(shifts, null, 2), 'utf-8');
+}
+
+let SHIFTS = loadShiftConfig();
 
 function getWIBParts(date = new Date()) {
   const formatter = new Intl.DateTimeFormat('en-US', {
@@ -31,8 +114,16 @@ function getWIBParts(date = new Date()) {
   };
 }
 
-function toMinutes(hour, minute) {
-  return hour * 60 + minute;
+function getShiftConfig() {
+  return SHIFTS.map((s) => ({ ...s }));
+}
+
+function setShiftConfig(nextShifts) {
+  validateShiftInput(nextShifts);
+  const normalized = nextShifts.map(normalizeShift);
+  persistShiftConfig(normalized);
+  SHIFTS = normalized;
+  return getShiftConfig();
 }
 
 function formatDateISO(parts) {
@@ -49,12 +140,11 @@ function getCurrentShift(date = new Date()) {
   for (const shift of SHIFTS) {
     const startMin = toMinutes(shift.startHour, shift.startMin);
     const endMin = toMinutes(shift.endHour, shift.endMin);
-
-    if (shift.name === 'Shift 3') {
-      if (nowMin >= startMin || nowMin < endMin) {
-        return { ...shift, wib };
-      }
-    } else if (nowMin >= startMin && nowMin < endMin) {
+    const crossesMidnight = endMin <= startMin;
+    const inRange = crossesMidnight
+      ? (nowMin >= startMin || nowMin < endMin)
+      : (nowMin >= startMin && nowMin < endMin);
+    if (inRange) {
       return { ...shift, wib };
     }
   }
@@ -63,12 +153,13 @@ function getCurrentShift(date = new Date()) {
 }
 
 function getShiftDate(shift, wib) {
-  if (shift.name !== 'Shift 3') {
-    return formatDateISO(wib);
-  }
-
   const nowMin = toMinutes(wib.hour, wib.minute);
   const startMin = toMinutes(shift.startHour, shift.startMin);
+  const endMin = toMinutes(shift.endHour, shift.endMin);
+  const crossesMidnight = endMin <= startMin;
+  if (!crossesMidnight) {
+    return formatDateISO(wib);
+  }
 
   if (nowMin >= startMin) {
     return formatDateISO(wib);
@@ -89,9 +180,11 @@ function getNextShift(currentShift) {
 function getShiftProgress(shift, wib) {
   const nowMin = toMinutes(wib.hour, wib.minute) + wib.second / 60;
   const startMin = toMinutes(shift.startHour, shift.startMin);
+  const endMin = toMinutes(shift.endHour, shift.endMin);
+  const crossesMidnight = endMin <= startMin;
   let elapsedMin;
 
-  if (shift.name === 'Shift 3') {
+  if (crossesMidnight) {
     if (nowMin >= startMin) {
       elapsedMin = nowMin - startMin;
     } else {
@@ -132,11 +225,24 @@ function padTime(hour, min) {
 }
 
 function getBoundaryTimes() {
-  return [
-    { hour: 7, minute: 0 },
-    { hour: 16, minute: 0 },
-    { hour: 23, minute: 0 },
-  ];
+  const marks = [];
+  const seen = new Set();
+
+  for (const shift of SHIFTS) {
+    const candidates = [
+      { hour: shift.startHour, minute: shift.startMin },
+      { hour: shift.endHour, minute: shift.endMin },
+    ];
+
+    for (const mark of candidates) {
+      const key = `${mark.hour}:${mark.minute}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      marks.push(mark);
+    }
+  }
+
+  return marks;
 }
 
 function isAtBoundary(wib, lastCheckMin) {
@@ -145,7 +251,8 @@ function isAtBoundary(wib, lastCheckMin) {
 
   for (const b of boundaries) {
     const bMin = toMinutes(b.hour, b.minute);
-    if (wib.hour === b.hour && wib.minute === b.minute && wib.second === 0) {
+    // Tidak pakai syarat detik==0 agar tidak miss boundary saat event loop delay.
+    if (wib.hour === b.hour && wib.minute === b.minute) {
       if (lastCheckMin !== bMin) {
         return { crossed: true, boundaryMin: bMin };
       }
@@ -164,7 +271,6 @@ function getShiftDurationHours(shiftName) {
 }
 
 module.exports = {
-  SHIFTS,
   getWIBParts,
   getCurrentShift,
   getShiftDate,
@@ -177,4 +283,6 @@ module.exports = {
   formatDateISO,
   getShiftByName,
   getShiftDurationHours,
+  getShiftConfig,
+  setShiftConfig,
 };

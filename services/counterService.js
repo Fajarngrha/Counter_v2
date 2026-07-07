@@ -22,8 +22,12 @@ let lastBoundaryMin = -1;
 let shiftStartCount = 0;
 let shiftStartTime = null;
 
+function calcTargetPerShift(targetPerHour, durationHours) {
+  return Math.max(0, Math.round((targetPerHour || 0) * (durationHours || 0)));
+}
+
 function calcRawTargetTicker(target, shift, progress) {
-  const targetPerShift = target.target_per_hour * shift.durationHours;
+  const targetPerShift = calcTargetPerShift(target.target_per_hour, shift.durationHours);
   const elapsedSeconds = Math.floor(progress.elapsedMinutes * 60);
   const intervalCount = target.interval_seconds > 0
     ? Math.floor(elapsedSeconds / target.interval_seconds)
@@ -301,7 +305,7 @@ function getDashboardData() {
   const progress = getShiftProgress(shift, shift.wib);
   const iot = getIotStatus();
 
-  const targetPerShift = target.target_per_hour * shift.durationHours;
+  const targetPerShift = calcTargetPerShift(target.target_per_hour, shift.durationHours);
   const elapsedHours = progress.elapsedMinutes / 60;
   const currentRate = elapsedHours > 0.01 ? Math.round(state.count / elapsedHours) : 0;
   const projection = elapsedHours > 0.01
