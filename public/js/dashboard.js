@@ -160,6 +160,85 @@ function parseTimeInput(value) {
   return { hour, minute };
 }
 
+function normalizeBreaks(shift) {
+  if (Array.isArray(shift?.breaks)) {
+    return shift.breaks
+      .filter((b) => Number.isInteger(b?.startHour) && Number.isInteger(b?.startMin)
+        && Number.isInteger(b?.endHour) && Number.isInteger(b?.endMin))
+      .slice(0, 2);
+  }
+
+  if (
+    Number.isInteger(shift?.breakStartHour)
+    && Number.isInteger(shift?.breakStartMin)
+    && Number.isInteger(shift?.breakEndHour)
+    && Number.isInteger(shift?.breakEndMin)
+  ) {
+    return [{
+      startHour: shift.breakStartHour,
+      startMin: shift.breakStartMin,
+      endHour: shift.breakEndHour,
+      endMin: shift.breakEndMin,
+    }];
+  }
+  return [];
+}
+
+function setSecondBreakVisibility(prefix, visible) {
+  const rowEl = el(`shift${prefix}BreakRow2`);
+  const btnEl = el(`btnShift${prefix}AddBreak`);
+  if (rowEl) rowEl.classList.toggle('hidden', !visible);
+  if (btnEl) btnEl.textContent = visible ? '−' : '+';
+}
+
+function setBreakTimeInputs(prefix, shift) {
+  const breaks = normalizeBreaks(shift);
+  const first = breaks[0] || null;
+  const second = breaks[1] || null;
+
+  el(`inpShift${prefix}Break1Start`).value = first ? toTimeInputValue(first.startHour, first.startMin) : '';
+  el(`inpShift${prefix}Break1End`).value = first ? toTimeInputValue(first.endHour, first.endMin) : '';
+  el(`inpShift${prefix}Break2Start`).value = second ? toTimeInputValue(second.startHour, second.startMin) : '';
+  el(`inpShift${prefix}Break2End`).value = second ? toTimeInputValue(second.endHour, second.endMin) : '';
+  setSecondBreakVisibility(prefix, !!second);
+}
+
+function parseBreakInputs(prefix, shiftName) {
+  const ranges = [
+    {
+      idx: 1,
+      startRaw: el(`inpShift${prefix}Break1Start`).value,
+      endRaw: el(`inpShift${prefix}Break1End`).value,
+    },
+    {
+      idx: 2,
+      startRaw: el(`inpShift${prefix}Break2Start`).value,
+      endRaw: el(`inpShift${prefix}Break2End`).value,
+    },
+  ];
+
+  const breaks = [];
+  for (const range of ranges) {
+    if (!range.startRaw && !range.endRaw) continue;
+    if (!range.startRaw || !range.endRaw) {
+      throw new Error(`Jam istirahat ke-${range.idx} ${shiftName} harus diisi lengkap.`);
+    }
+    const start = parseTimeInput(range.startRaw);
+    const end = parseTimeInput(range.endRaw);
+    if (!start || !end) {
+      throw new Error(`Jam istirahat ke-${range.idx} ${shiftName} belum valid. Gunakan HH:MM.`);
+    }
+    breaks.push({
+      startHour: start.hour,
+      startMin: start.minute,
+      endHour: end.hour,
+      endMin: end.minute,
+    });
+  }
+
+  return breaks;
+}
+
 async function fetchShiftConfig() {
   const data = await fetchJson('/api/shifts');
   return data.shifts || [];
@@ -177,13 +256,16 @@ function populateShiftForm(shifts) {
   el('inpShift2End').value = toTimeInputValue(s2.endHour, s2.endMin);
   el('inpShift3Start').value = toTimeInputValue(s3.startHour, s3.startMin);
   el('inpShift3End').value = toTimeInputValue(s3.endHour, s3.endMin);
+  setBreakTimeInputs('1', s1);
+  setBreakTimeInputs('2', s2);
+  setBreakTimeInputs('3', s3);
 }
 
 function collectShiftForm() {
   const rows = [
-    { name: 'Shift 1', start: el('inpShift1Start').value, end: el('inpShift1End').value },
-    { name: 'Shift 2', start: el('inpShift2Start').value, end: el('inpShift2End').value },
-    { name: 'Shift 3', start: el('inpShift3Start').value, end: el('inpShift3End').value },
+    { name: 'Shift 1', prefix: '1', start: el('inpShift1Start').value, end: el('inpShift1End').value },
+    { name: 'Shift 2', prefix: '2', start: el('inpShift2Start').value, end: el('inpShift2End').value },
+    { name: 'Shift 3', prefix: '3', start: el('inpShift3Start').value, end: el('inpShift3End').value },
   ];
 
   return rows.map((row) => {
@@ -198,6 +280,7 @@ function collectShiftForm() {
       startMin: start.minute,
       endHour: end.hour,
       endMin: end.minute,
+      breaks: parseBreakInputs(row.prefix, row.name),
     };
   });
 }
@@ -425,6 +508,18 @@ async function init() {
     } catch (err) {
       alert(err.message);
     }
+  });
+
+  ['1', '2', '3'].forEach((prefix) => {
+    el(`btnShift${prefix}AddBreak`).addEventListener('click', () => {
+      const rowEl = el(`shift${prefix}BreakRow2`);
+      const showing = rowEl && !rowEl.classList.contains('hidden');
+      if (showing) {
+        el(`inpShift${prefix}Break2Start`).value = '';
+        el(`inpShift${prefix}Break2End`).value = '';
+      }
+      setSecondBreakVisibility(prefix, !showing);
+    });
   });
 
   el('btnCancelShiftConfig').addEventListener('click', () => {

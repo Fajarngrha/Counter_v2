@@ -226,29 +226,91 @@
     <div class="modal">
       <h3>Edit Jadwal Shift</h3>
       <div class="shift-edit-grid">
-        <div class="shift-edit-row">
-          <div class="shift-edit-name">Shift 1</div>
-          <label for="inpShift1Start">Mulai</label>
-          <input id="inpShift1Start" type="time" step="60">
-          <label for="inpShift1End">Selesai</label>
-          <input id="inpShift1End" type="time" step="60">
+        <div class="shift-edit-item">
+          <div class="shift-edit-row">
+            <div class="shift-edit-name">Shift 1</div>
+            <label for="inpShift1Start">Mulai</label>
+            <input id="inpShift1Start" type="time" step="60">
+            <label for="inpShift1End">Selesai</label>
+            <input id="inpShift1End" type="time" step="60">
+          </div>
+          <div class="shift-break-row">
+            <div class="shift-break-label">Istirahat</div>
+            <div class="shift-break-list">
+              <div class="shift-break-range">
+                <input id="inpShift1Break1Start" type="time" step="60">
+                <span>-</span>
+                <input id="inpShift1Break1End" type="time" step="60">
+              </div>
+              <div id="shift1BreakRow2" class="shift-break-range hidden">
+                <input id="inpShift1Break2Start" type="time" step="60">
+                <span>-</span>
+                <input id="inpShift1Break2End" type="time" step="60">
+              </div>
+            </div>
+            <button id="btnShift1AddBreak" class="btn-icon btn-icon--small" type="button" title="Tambah/Jadikan 2 jam istirahat">
+              +
+            </button>
+          </div>
         </div>
-        <div class="shift-edit-row">
-          <div class="shift-edit-name">Shift 2</div>
-          <label for="inpShift2Start">Mulai</label>
-          <input id="inpShift2Start" type="time" step="60">
-          <label for="inpShift2End">Selesai</label>
-          <input id="inpShift2End" type="time" step="60">
+
+        <div class="shift-edit-item">
+          <div class="shift-edit-row">
+            <div class="shift-edit-name">Shift 2</div>
+            <label for="inpShift2Start">Mulai</label>
+            <input id="inpShift2Start" type="time" step="60">
+            <label for="inpShift2End">Selesai</label>
+            <input id="inpShift2End" type="time" step="60">
+          </div>
+          <div class="shift-break-row">
+            <div class="shift-break-label">Istirahat</div>
+            <div class="shift-break-list">
+              <div class="shift-break-range">
+                <input id="inpShift2Break1Start" type="time" step="60">
+                <span>-</span>
+                <input id="inpShift2Break1End" type="time" step="60">
+              </div>
+              <div id="shift2BreakRow2" class="shift-break-range hidden">
+                <input id="inpShift2Break2Start" type="time" step="60">
+                <span>-</span>
+                <input id="inpShift2Break2End" type="time" step="60">
+              </div>
+            </div>
+            <button id="btnShift2AddBreak" class="btn-icon btn-icon--small" type="button" title="Tambah/Jadikan 2 jam istirahat">
+              +
+            </button>
+          </div>
         </div>
-        <div class="shift-edit-row">
-          <div class="shift-edit-name">Shift 3</div>
-          <label for="inpShift3Start">Mulai</label>
-          <input id="inpShift3Start" type="time" step="60">
-          <label for="inpShift3End">Selesai</label>
-          <input id="inpShift3End" type="time" step="60">
+
+        <div class="shift-edit-item">
+          <div class="shift-edit-row">
+            <div class="shift-edit-name">Shift 3</div>
+            <label for="inpShift3Start">Mulai</label>
+            <input id="inpShift3Start" type="time" step="60">
+            <label for="inpShift3End">Selesai</label>
+            <input id="inpShift3End" type="time" step="60">
+          </div>
+          <div class="shift-break-row">
+            <div class="shift-break-label">Istirahat</div>
+            <div class="shift-break-list">
+              <div class="shift-break-range">
+                <input id="inpShift3Break1Start" type="time" step="60">
+                <span>-</span>
+                <input id="inpShift3Break1End" type="time" step="60">
+              </div>
+              <div id="shift3BreakRow2" class="shift-break-range hidden">
+                <input id="inpShift3Break2Start" type="time" step="60">
+                <span>-</span>
+                <input id="inpShift3Break2End" type="time" step="60">
+              </div>
+            </div>
+            <button id="btnShift3AddBreak" class="btn-icon btn-icon--small" type="button" title="Tambah/Jadikan 2 jam istirahat">
+              +
+            </button>
+          </div>
         </div>
       </div>
-      <div class="status-sub">Gunakan format 24 jam. Shift boleh melewati tengah malam.</div>
+      <div class="status-sub">Gunakan format 24 jam. Shift boleh melewati tengah malam. Jam istirahat opsional.</div>
       <div class="modal-actions">
         <button id="btnCancelShiftConfig" class="btn btn-ghost" type="button">Batal</button>
         <button id="btnSaveShiftConfig" class="btn btn-success" type="button">Simpan</button>

@@ -873,18 +873,31 @@
       "interval_seconds": 349,
       "shift_duration_hours": 8.583333333333334,
       "timestamp_saved": "2026-07-07T02:44:16.805Z"
+    },
+    {
+      "id": 71,
+      "tanggal": "2026-07-07",
+      "shift": "Shift 1",
+      "total_barang": 81,
+      "target_per_hour": 10,
+      "target_per_shift": 86,
+      "model": "Yamaha",
+      "pcs_per_interval": 1,
+      "interval_seconds": 349,
+      "shift_duration_hours": 8.583333333333334,
+      "timestamp_saved": "2026-07-07T08:50:00.205Z"
     }
   ],
   "current_state": {
     "shift": "Shift 1",
     "shift_date": "2026-07-07",
-    "count": 6,
-    "daily_total": 6,
+    "count": 0,
+    "daily_total": 162,
     "daily_date": "2026-07-07",
-    "last_iot_seen": "2026-07-07T03:19:03.896Z",
-    "updated_at": "2026-07-07T03:19:03.899Z",
-    "last_device_time": "2026-07-07 10:19:02",
-    "last_device_counter": 6,
+    "last_iot_seen": "2026-07-07T08:48:57.343Z",
+    "updated_at": "2026-07-07T08:50:00.212Z",
+    "last_device_time": "2026-07-07 15:48:56",
+    "last_device_counter": 81,
     "device_offset": 0,
     "target_ticker_offset": 0
   },
@@ -895,7 +908,7 @@
     "interval_seconds": 349
   },
   "_meta": {
-    "last_history_id": 70,
+    "last_history_id": 71,
     "demo_seeded": true
   }
 }

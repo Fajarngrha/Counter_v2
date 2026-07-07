@@ -16,21 +16,96 @@ function toMinutes(hour, minute) {
   return hour * 60 + minute;
 }
 
+function durationCircularMinutes(startMin, endMin) {
+  return endMin > startMin ? (endMin - startMin) : (24 * 60 - startMin + endMin);
+}
+
+function overlapLinearMinutes(aStart, aEnd, bStart, bEnd) {
+  return Math.max(0, Math.min(aEnd, bEnd) - Math.max(aStart, bStart));
+}
+
+function extractRawBreaks(shift) {
+  if (Array.isArray(shift.breaks)) {
+    return shift.breaks;
+  }
+
+  const legacy = [
+    shift.breakStartHour,
+    shift.breakStartMin,
+    shift.breakEndHour,
+    shift.breakEndMin,
+  ];
+  if (legacy.every((v) => v === null || v === undefined || v === '')) {
+    return [];
+  }
+  return [{
+    startHour: shift.breakStartHour,
+    startMin: shift.breakStartMin,
+    endHour: shift.breakEndHour,
+    endMin: shift.breakEndMin,
+  }];
+}
+
+function normalizeBreaks(shift) {
+  return extractRawBreaks(shift)
+    .filter((b) => Number.isInteger(b?.startHour) && Number.isInteger(b?.startMin)
+      && Number.isInteger(b?.endHour) && Number.isInteger(b?.endMin))
+    .slice(0, 2)
+    .map((b) => ({
+      startHour: b.startHour % 24,
+      startMin: b.startMin,
+      endHour: b.endHour % 24,
+      endMin: b.endMin,
+    }));
+}
+
+function calcBreakOverlapMinutes(shift, windowDurationMinutes, breaks = normalizeBreaks(shift)) {
+  if (windowDurationMinutes <= 0) return 0;
+  if (!breaks.length) return 0;
+
+  const shiftStartMin = toMinutes(shift.startHour, shift.startMin);
+  const intervalStart = 0;
+  const intervalEnd = windowDurationMinutes;
+  let overlapTotal = 0;
+
+  for (const br of breaks) {
+    const breakStartMin = toMinutes(br.startHour, br.startMin);
+    const breakEndMin = toMinutes(br.endHour, br.endMin);
+    const breakDurationMinutes = durationCircularMinutes(breakStartMin, breakEndMin);
+    if (breakDurationMinutes <= 0) continue;
+    const breakStartOffset = (breakStartMin - shiftStartMin + 24 * 60) % (24 * 60);
+
+    for (const candidateStart of [breakStartOffset - 24 * 60, breakStartOffset, breakStartOffset + 24 * 60]) {
+      const candidateEnd = candidateStart + breakDurationMinutes;
+      overlapTotal += overlapLinearMinutes(intervalStart, intervalEnd, candidateStart, candidateEnd);
+    }
+  }
+
+  return Math.min(windowDurationMinutes, Math.max(0, overlapTotal));
+}
+
 function calcDurationHours(shift) {
   const start = toMinutes(shift.startHour, shift.startMin);
   const end = toMinutes(shift.endHour, shift.endMin);
-  const durationMinutes = end > start ? (end - start) : (24 * 60 - start + end);
-  return durationMinutes / 60;
+  const durationMinutes = durationCircularMinutes(start, end);
+  const breakMinutes = calcBreakOverlapMinutes(shift, durationMinutes);
+  return Math.max(1, durationMinutes - breakMinutes) / 60;
 }
 
 function normalizeShift(shift) {
-  return {
+  const breaks = normalizeBreaks(shift);
+  const normalized = {
     name: shift.name,
     startHour: shift.startHour % 24,
     startMin: shift.startMin,
     endHour: shift.endHour % 24,
     endMin: shift.endMin,
-    durationHours: calcDurationHours(shift),
+    breaks,
+  };
+
+  return {
+    ...normalized,
+    durationHours: calcDurationHours(normalized),
   };
 }
 
@@ -57,6 +132,52 @@ function validateShiftInput(shifts) {
     }
     if (shift.startHour === shift.endHour && shift.startMin === shift.endMin) {
       throw new Error(`Start dan end ${shift.name} tidak boleh sama.`);
+    }
+
+    const rawBreaks = extractRawBreaks(shift);
+    if (rawBreaks.length > 2) {
+      throw new Error(`Maksimal 2 jam istirahat untuk ${shift.name}.`);
+    }
+    for (const [idx, br] of rawBreaks.entries()) {
+      const values = [br?.startHour, br?.startMin, br?.endHour, br?.endMin];
+      const empty = values.every((v) => v === null || v === undefined || v === '');
+      if (empty) continue;
+      if (values.some((v) => !Number.isInteger(v))) {
+        throw new Error(`Jam istirahat ke-${idx + 1} ${shift.name} tidak valid.`);
+      }
+      if (
+        br.startHour < 0 || br.startHour > 23 || br.endHour < 0 || br.endHour > 23
+        || br.startMin < 0 || br.startMin > 59 || br.endMin < 0 || br.endMin > 59
+      ) {
+        throw new Error(`Jam istirahat ke-${idx + 1} ${shift.name} harus 00:00-23:59.`);
+      }
+      if (br.startHour === br.endHour && br.startMin === br.endMin) {
+        throw new Error(`Mulai dan selesai istirahat ke-${idx + 1} ${shift.name} tidak boleh sama.`);
+      }
+    }
+
+    const normalized = normalizeShift(shift);
+    const shiftStart = toMinutes(normalized.startHour, normalized.startMin);
+    const shiftEnd = toMinutes(normalized.endHour, normalized.endMin);
+    const shiftDuration = durationCircularMinutes(shiftStart, shiftEnd);
+    if (normalized.breaks.length) {
+      const breakInShift = calcBreakOverlapMinutes(normalized, shiftDuration, normalized.breaks);
+      if (breakInShift <= 0) {
+        throw new Error(`Jam istirahat ${shift.name} harus berada di dalam rentang shift.`);
+      }
+      if (breakInShift >= shiftDuration) {
+        throw new Error(`Total durasi istirahat ${shift.name} terlalu panjang.`);
+      }
+      const firstBreak = normalized.breaks[0];
+      const secondBreak = normalized.breaks[1];
+      if (firstBreak && secondBreak) {
+        const overlap1 = calcBreakOverlapMinutes(normalized, shiftDuration, [firstBreak]);
+        const overlap2 = calcBreakOverlapMinutes(normalized, shiftDuration, [secondBreak]);
+        const overlapBoth = calcBreakOverlapMinutes(normalized, shiftDuration, [firstBreak, secondBreak]);
+        if (overlapBoth < overlap1 + overlap2) {
+          throw new Error(`Jam istirahat ${shift.name} tidak boleh saling tumpang tindih.`);
+        }
+      }
     }
   }
 }
@@ -182,19 +303,25 @@ function getShiftProgress(shift, wib) {
   const startMin = toMinutes(shift.startHour, shift.startMin);
   const endMin = toMinutes(shift.endHour, shift.endMin);
   const crossesMidnight = endMin <= startMin;
-  let elapsedMin;
+  let elapsedRawMin;
 
   if (crossesMidnight) {
     if (nowMin >= startMin) {
-      elapsedMin = nowMin - startMin;
+      elapsedRawMin = nowMin - startMin;
     } else {
-      elapsedMin = 24 * 60 - startMin + nowMin;
+      elapsedRawMin = 24 * 60 - startMin + nowMin;
     }
   } else {
-    elapsedMin = nowMin - startMin;
+    elapsedRawMin = nowMin - startMin;
   }
 
-  const totalMin = shift.durationHours * 60;
+  const totalRawMin = durationCircularMinutes(startMin, endMin);
+  const safeElapsedRaw = Math.max(0, Math.min(totalRawMin, elapsedRawMin));
+  const breakElapsedMin = calcBreakOverlapMinutes(shift, safeElapsedRaw);
+  const breakTotalMin = calcBreakOverlapMinutes(shift, totalRawMin);
+  const elapsedMin = Math.max(0, safeElapsedRaw - breakElapsedMin);
+  const totalMin = Math.max(1, totalRawMin - breakTotalMin);
+
   return {
     elapsedMinutes: elapsedMin,
     totalMinutes: totalMin,
