@@ -138,6 +138,7 @@ function readDb() {
         last_device_time: null,
         last_device_counter: null,
         device_offset: 0,
+        device_reset_pending: false,
         target_ticker_offset: 0,
         updated_at: nowIso(),
       },
@@ -286,6 +287,7 @@ function getState() {
     last_device_time: null,
     last_device_counter: null,
     device_offset: 0,
+    device_reset_pending: false,
     target_ticker_offset: 0,
     ...data.current_state,
   };

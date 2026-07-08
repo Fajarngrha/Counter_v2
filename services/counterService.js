@@ -175,6 +175,7 @@ function applyDeviceCounter(deviceCounter, deviceTime) {
     : Number.isFinite(state.last_device_counter) ? state.last_device_counter : 0;
 
   let deviceOffset = Number.isFinite(state.device_offset) ? state.device_offset : null;
+  const deviceResetPending = !!state.device_reset_pending;
   const lastDeviceCounter = Number.isFinite(state.last_device_counter)
     ? state.last_device_counter
     : null;
@@ -184,8 +185,12 @@ function applyDeviceCounter(deviceCounter, deviceTime) {
     deviceOffset = Math.max(0, nextDeviceCounter - count);
   }
 
-  // Jika counter device turun (misalnya device reset), jangkar offset disesuaikan ulang.
-  if (lastDeviceCounter !== null && nextDeviceCounter < lastDeviceCounter) {
+  // Setelah reset dashboard, paket pertama dari device dijadikan anchor.
+  // Jika paket pertama > 0 (umumnya paket trigger pertama), tampilkan sebagai 1.
+  if (deviceResetPending) {
+    deviceOffset = nextDeviceCounter > 0 ? (nextDeviceCounter - 1) : 0;
+  } else if (lastDeviceCounter !== null && nextDeviceCounter < lastDeviceCounter) {
+    // Jika counter device turun (misalnya device reset), jangkar offset disesuaikan ulang.
     deviceOffset = Math.max(0, nextDeviceCounter - count);
   }
 
@@ -205,6 +210,7 @@ function applyDeviceCounter(deviceCounter, deviceTime) {
     last_device_time: deviceTime || null,
     last_device_counter: nextDeviceCounter,
     device_offset: deviceOffset,
+    device_reset_pending: false,
   });
 
   return getDashboardData();
@@ -249,6 +255,7 @@ function resetCounter() {
     daily_date: dailyDate,
     last_iot_seen: new Date().toISOString(),
     device_offset: nextOffset,
+    device_reset_pending: true,
   });
 
   return getDashboardData();
