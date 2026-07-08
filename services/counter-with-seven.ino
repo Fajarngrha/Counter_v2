@@ -68,9 +68,11 @@ const unsigned long debounceDelay = 300; // ms
 volatile bool counterEdgePending = false;
 volatile unsigned long counterEdgeUs = 0;
 bool counterInputArmed = true;
+unsigned long counterHighSinceMs = 0;
 unsigned long lastCounterAcceptedMs = 0;
-const unsigned long counterConfirmUs = 3000;     // 3ms verifikasi level LOW
-const unsigned long counterMinIntervalMs = 120;  // anti multi-count karena chatter/noise
+const unsigned long counterConfirmUs = 8000;        // 8ms verifikasi level LOW
+const unsigned long counterMinIntervalMs = 180;     // anti multi-count karena chatter/noise
+const unsigned long counterRearmHighStableMs = 40;  // wajib HIGH stabil sebelum re-arm
 
 portMUX_TYPE mux = portMUX_INITIALIZER_UNLOCKED;
 
@@ -637,6 +639,7 @@ void triggerCounterResetFromButton() {
   lastDebounceTime = millis();
   lastCounterAcceptedMs = millis();
   counterInputArmed = true;
+  counterHighSinceMs = 0;
   noInterrupts();
   counterEdgePending = false;
   interrupts();
@@ -650,9 +653,19 @@ void triggerCounterResetFromButton() {
 }
 
 void processCounterInput() {
-  // Re-arm setelah input kembali HIGH (kontak relay lepas).
-  if (!counterInputArmed && digitalRead(pinRelay) == HIGH) {
-    counterInputArmed = true;
+  const bool pinHigh = (digitalRead(pinRelay) == HIGH);
+
+  // Re-arm hanya jika input HIGH stabil beberapa ms (hindari bounce re-close).
+  if (!counterInputArmed) {
+    if (pinHigh) {
+      if (counterHighSinceMs == 0) {
+        counterHighSinceMs = millis();
+      } else if ((millis() - counterHighSinceMs) >= counterRearmHighStableMs) {
+        counterInputArmed = true;
+      }
+    } else {
+      counterHighSinceMs = 0;
+    }
   }
 
   bool pending = false;
@@ -674,6 +687,7 @@ void processCounterInput() {
     portEXIT_CRITICAL(&mux);
     lastCounterAcceptedMs = nowMs;
     counterInputArmed = false; // 1 cycle = 1 count, tunggu lepas dulu
+    counterHighSinceMs = 0;
   }
 
   noInterrupts();

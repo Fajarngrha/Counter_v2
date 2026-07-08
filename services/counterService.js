@@ -315,11 +315,14 @@ function getDashboardData() {
   const expectedByNow = Math.round(targetPerShift * progress.fraction);
   const elapsedSeconds = Math.floor(progress.elapsedMinutes * 60);
   const totalSeconds = Math.floor(progress.totalMinutes * 60);
+  const shiftWindowClosed = elapsedSeconds >= totalSeconds;
   const targetTickerOffset = Number.isFinite(state.target_ticker_offset)
     ? state.target_ticker_offset
     : 0;
-  const rawTargetByInterval = calcRawTargetTicker(target, shift, progress);
-  const targetByInterval = Math.max(0, rawTargetByInterval - targetTickerOffset);
+  const rawTargetByInterval = shiftWindowClosed ? 0 : calcRawTargetTicker(target, shift, progress);
+  const targetByInterval = shiftWindowClosed
+    ? 0
+    : Math.max(0, rawTargetByInterval - targetTickerOffset);
   const behind = expectedByNow - state.count;
   const progressPercent = targetPerShift > 0
     ? Math.min(100, Math.round((state.count / targetPerShift) * 100))
@@ -362,7 +365,7 @@ function getDashboardData() {
     },
     targetTicker: {
       value: targetByInterval,
-      max: Math.max(0, targetPerShift - targetTickerOffset),
+      max: shiftWindowClosed ? 0 : Math.max(0, targetPerShift - targetTickerOffset),
     },
     analytics: {
       currentRate,
