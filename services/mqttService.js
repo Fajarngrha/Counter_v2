@@ -206,6 +206,20 @@ function publishTargetTickerReset(options = {}) {
   return true;
 }
 
+function publishTargetTickerValue(value) {
+  if (!client || !connected) return false;
+
+  const safeValue = Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0;
+  const topic = config.mqtt.commandTopic;
+  const payload = JSON.stringify({
+    action: 'target_ticker_value',
+    source: 'server',
+    value: safeValue,
+  });
+  client.publish(topic, payload);
+  return true;
+}
+
 function isMqttConnected() {
   return connected;
 }
@@ -216,5 +230,6 @@ module.exports = {
   publishDeviceReset,
   publishTargetConfig,
   publishTargetTickerReset,
+  publishTargetTickerValue,
   isMqttConnected,
 };

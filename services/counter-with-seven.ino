@@ -108,6 +108,9 @@ unsigned long targetPcsPerInterval = 5;
 unsigned long targetIntervalSeconds = 10;
 unsigned long targetTickerOffset = 0;
 String lastShiftName = "";
+unsigned long syncedTargetTickerValue = 0;
+unsigned long syncedTargetTickerAtMs = 0;
+const unsigned long syncedTargetTickerTtlMs = 7000;
 
 String getRtcTimestamp();
 void applyTargetConfig(const String& message);
@@ -363,14 +366,19 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
       return;
     }
 
-    long syncedOffset = parseLongField(message, "targetTickerOffset", -1);
-    if (syncedOffset >= 0) {
-      targetTickerOffset = (unsigned long)syncedOffset;
-      Serial.print("Target saat ini di-sync dari dashboard. Offset=");
-      Serial.println(targetTickerOffset);
-    } else {
-      resetTargetTickerOffset();
-      Serial.println("Target saat ini di-reset dari dashboard.");
+    // Penting: gunakan reset lokal agar setelah reset tampil 0 stabil.
+    // Offset dari server bisa berbeda karena jadwal/break dihitung di backend,
+    // sedangkan perangkat menghitung dari RTC lokal.
+    resetTargetTickerOffset();
+    Serial.println("Target saat ini di-reset dari dashboard (pakai offset lokal device).");
+    return;
+  }
+
+  if (lowerMessage.indexOf("\"action\":\"target_ticker_value\"") >= 0) {
+    long nextValue = parseLongField(message, "value", -1);
+    if (nextValue >= 0) {
+      syncedTargetTickerValue = (unsigned long)nextValue;
+      syncedTargetTickerAtMs = millis();
     }
     return;
   }
@@ -621,6 +629,9 @@ void updateSevenSegmentDisplay() {
   }
 
   unsigned long targetSaatIni = calcTargetSaatIni(shift);
+  if (syncedTargetTickerAtMs > 0 && (millis() - syncedTargetTickerAtMs) <= syncedTargetTickerTtlMs) {
+    targetSaatIni = syncedTargetTickerValue;
+  }
   if (targetSaatIni <= 9999UL) {
     showNumberOnSevenSeg(targetSaatIni);
     sevenSegLastText = "";

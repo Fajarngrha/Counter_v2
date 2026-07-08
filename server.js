@@ -17,6 +17,7 @@ const {
   publishDeviceReset,
   publishTargetConfig,
   publishTargetTickerReset,
+  publishTargetTickerValue,
 } = require('./services/mqttService');
 const { getHistory, getTarget, updateTarget, getState } = require('./db/database');
 
@@ -93,6 +94,7 @@ app.get('/api/shifts', requireAuth, (req, res) => {
 app.post('/api/counter/reset', requireAuth, (req, res) => {
   publishDeviceReset();
   const data = resetCounter();
+  publishTargetTickerValue(data?.targetTicker?.value ?? 0);
   broadcastDashboard(data);
   res.json(data);
 });
@@ -100,6 +102,7 @@ app.post('/api/counter/reset', requireAuth, (req, res) => {
 app.post('/api/target-ticker/reset', requireAuth, (req, res) => {
   const data = resetTargetTicker();
   publishTargetTickerReset({ targetTickerOffset: getState().target_ticker_offset });
+  publishTargetTickerValue(data?.targetTicker?.value ?? 0);
   broadcastDashboard(data);
   res.json(data);
 });
@@ -121,6 +124,7 @@ app.put('/api/target', requireAuth, (req, res) => {
   );
   const target = getTarget();
   publishTargetConfig(target, { targetTickerOffset: getState().target_ticker_offset });
+  publishTargetTickerValue(getDashboardData()?.targetTicker?.value ?? 0);
   res.json(target);
 });
 
@@ -171,7 +175,9 @@ setInterval(() => {
 }, 1000);
 
 setInterval(() => {
-  broadcastDashboard();
+  const data = getDashboardData();
+  publishTargetTickerValue(data?.targetTicker?.value ?? 0);
+  broadcastDashboard(data);
 }, 2000);
 
 server.listen(config.port, () => {
