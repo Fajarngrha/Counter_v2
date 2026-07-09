@@ -88,25 +88,10 @@ function pulseCounter() {
   setTimeout(() => counterValueEl.classList.remove('pulse'), 150);
 }
 
-function calcLiveIntervalTarget(state) {
-  if (!state?.pcsPerInterval || !state?.intervalSeconds) return 0;
-
-  const elapsedNow = state.baseElapsedSeconds + (Date.now() - state.syncedAt) / 1000;
-  const elapsedDelta = Math.max(0, elapsedNow - state.baseElapsedSeconds);
-  const intervals = Math.floor(elapsedDelta / state.intervalSeconds);
-  const value = state.baseValue + intervals * state.pcsPerInterval;
-  const max = state.maxValue || value;
-  return Math.min(value, max);
-}
-
 function syncTargetTickerState(data) {
   targetTickerState = {
-    pcsPerInterval: data.target?.pcsPerInterval,
-    intervalSeconds: data.target?.intervalSeconds,
     maxValue: data.targetTicker?.max ?? data.target?.perShift,
     baseValue: data.targetTicker?.value ?? 0,
-    baseElapsedSeconds: data.progress?.elapsedSeconds ?? 0,
-    syncedAt: Date.now(),
   };
   updateTargetTickerDisplay();
 }
@@ -114,7 +99,7 @@ function syncTargetTickerState(data) {
 function updateTargetTickerDisplay() {
   if (!targetTickerState) return;
 
-  const value = calcLiveIntervalTarget(targetTickerState);
+  const value = Number(targetTickerState.baseValue || 0);
   const { maxValue } = targetTickerState;
 
   counterTargetValueEl.textContent = fmtNumber(value);
@@ -446,8 +431,6 @@ async function init() {
 
   const initial = await fetchJson('/api/dashboard');
   render(initial);
-
-  setInterval(updateTargetTickerDisplay, 1000);
 
   if (typeof io === 'function') {
     const socket = io();

@@ -639,9 +639,7 @@ void updateSevenSegmentDisplay() {
       targetSaatIni = syncedTargetTickerValue;
     } else {
       // Jika sync telat/hilang, fallback ke lokal agar tidak mentok di 0000.
-      targetSaatIni = (syncedTargetTickerValue == 0)
-        ? localTargetSaatIni
-        : (localTargetSaatIni > syncedTargetTickerValue ? localTargetSaatIni : syncedTargetTickerValue);
+      targetSaatIni = localTargetSaatIni;
     }
   }
   if (targetSaatIni <= 9999UL) {

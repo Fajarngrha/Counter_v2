@@ -178,7 +178,7 @@ setInterval(() => {
   const data = getDashboardData();
   publishTargetTickerValue(data?.targetTicker?.value ?? 0);
   broadcastDashboard(data);
-}, 2000);
+}, 1000);
 
 server.listen(config.port, () => {
   console.log(`Server berjalan di http://localhost:${config.port}`);
