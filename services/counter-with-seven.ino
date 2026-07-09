@@ -110,7 +110,7 @@ unsigned long targetTickerOffset = 0;
 String lastShiftName = "";
 unsigned long syncedTargetTickerValue = 0;
 unsigned long syncedTargetTickerAtMs = 0;
-const unsigned long syncedTargetTickerTtlMs = 7000;
+const unsigned long syncedTargetTickerTtlMs = 6000;
 
 String getRtcTimestamp();
 void applyTargetConfig(const String& message);
@@ -370,6 +370,8 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
     // Offset dari server bisa berbeda karena jadwal/break dihitung di backend,
     // sedangkan perangkat menghitung dari RTC lokal.
     resetTargetTickerOffset();
+    syncedTargetTickerValue = 0;
+    syncedTargetTickerAtMs = millis();
     Serial.println("Target saat ini di-reset dari dashboard (pakai offset lokal device).");
     return;
   }
@@ -628,9 +630,19 @@ void updateSevenSegmentDisplay() {
     targetTickerOffset = 0;
   }
 
-  unsigned long targetSaatIni = calcTargetSaatIni(shift);
-  if (syncedTargetTickerAtMs > 0 && (millis() - syncedTargetTickerAtMs) <= syncedTargetTickerTtlMs) {
-    targetSaatIni = syncedTargetTickerValue;
+  const unsigned long localTargetSaatIni = calcTargetSaatIni(shift);
+  unsigned long targetSaatIni = localTargetSaatIni;
+  if (syncedTargetTickerAtMs > 0) {
+    const unsigned long syncAgeMs = millis() - syncedTargetTickerAtMs;
+    if (syncAgeMs <= syncedTargetTickerTtlMs) {
+      // Saat sync segar, ikuti angka server agar sama dengan dashboard.
+      targetSaatIni = syncedTargetTickerValue;
+    } else {
+      // Jika sync telat/hilang, fallback ke lokal agar tidak mentok di 0000.
+      targetSaatIni = (syncedTargetTickerValue == 0)
+        ? localTargetSaatIni
+        : (localTargetSaatIni > syncedTargetTickerValue ? localTargetSaatIni : syncedTargetTickerValue);
+    }
   }
   if (targetSaatIni <= 9999UL) {
     showNumberOnSevenSeg(targetSaatIni);
@@ -708,6 +720,8 @@ void processCounterInput() {
 
 void triggerTargetResetFromButton() {
   resetTargetTickerOffset();
+  syncedTargetTickerValue = 0;
+  syncedTargetTickerAtMs = millis();
   Serial.println("[BTN] Reset target saat ini ditekan.");
   lastSevenSegUpdateMs = 0;
   updateSevenSegmentDisplay();

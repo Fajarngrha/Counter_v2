@@ -46,6 +46,12 @@ function initCounter() {
   const shift = getCurrentShift();
   const shiftDate = getShiftDate(shift, shift.wib);
   const today = formatDateISO(shift.wib);
+  const baselineDeviceCounter = Number.isFinite(state.last_device_counter)
+    ? state.last_device_counter
+    : null;
+  const baselineOffset = baselineDeviceCounter !== null
+    ? baselineDeviceCounter
+    : (Number.isFinite(state.device_offset) ? state.device_offset : 0);
 
   if (state.shift !== shift.name || state.shift_date !== shiftDate) {
     if (state.count > 0 || state.shift !== shift.name) {
@@ -57,6 +63,9 @@ function initCounter() {
       count: 0,
       daily_total: state.daily_date === today ? state.daily_total : 0,
       daily_date: today,
+      last_device_counter: baselineDeviceCounter,
+      device_offset: baselineOffset,
+      device_reset_pending: baselineDeviceCounter === null,
       target_ticker_offset: 0,
     });
     shiftStartCount = 0;
@@ -76,6 +85,12 @@ function handleShiftBoundary() {
   lastBoundaryMin = boundary.boundaryMin;
 
   const state = getState();
+  const baselineDeviceCounter = Number.isFinite(state.last_device_counter)
+    ? state.last_device_counter
+    : null;
+  const baselineOffset = baselineDeviceCounter !== null
+    ? baselineDeviceCounter
+    : (Number.isFinite(state.device_offset) ? state.device_offset : 0);
   if (state.count > 0) {
     saveShiftRecord(state.shift_date, state.shift, state.count);
   }
@@ -90,6 +105,9 @@ function handleShiftBoundary() {
     count: 0,
     daily_total: state.daily_date === today ? state.daily_total + state.count : state.count,
     daily_date: today,
+    last_device_counter: baselineDeviceCounter,
+    device_offset: baselineOffset,
+    device_reset_pending: baselineDeviceCounter === null,
     target_ticker_offset: 0,
   });
 
@@ -255,7 +273,7 @@ function resetCounter() {
     daily_date: dailyDate,
     last_iot_seen: new Date().toISOString(),
     device_offset: nextOffset,
-    device_reset_pending: true,
+    device_reset_pending: currentDeviceCounter === null,
   });
 
   return getDashboardData();
