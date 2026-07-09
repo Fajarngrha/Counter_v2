@@ -140,6 +140,7 @@ function readDb() {
         device_offset: 0,
         device_reset_pending: false,
         target_ticker_offset: 0,
+        target_ticker_reset_elapsed_seconds: null,
         updated_at: nowIso(),
       },
       production_target: {
@@ -289,6 +290,7 @@ function getState() {
     device_offset: 0,
     device_reset_pending: false,
     target_ticker_offset: 0,
+    target_ticker_reset_elapsed_seconds: null,
     ...data.current_state,
   };
 }

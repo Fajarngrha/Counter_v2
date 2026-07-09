@@ -67,6 +67,7 @@ function initCounter() {
       device_offset: baselineOffset,
       device_reset_pending: baselineDeviceCounter === null,
       target_ticker_offset: 0,
+      target_ticker_reset_elapsed_seconds: null,
     });
     shiftStartCount = 0;
   } else {
@@ -109,6 +110,7 @@ function handleShiftBoundary() {
     device_offset: baselineOffset,
     device_reset_pending: baselineDeviceCounter === null,
     target_ticker_offset: 0,
+    target_ticker_reset_elapsed_seconds: null,
   });
 
   shiftStartCount = 0;
@@ -285,9 +287,11 @@ function resetTargetTicker() {
   const shift = getCurrentShift();
   const progress = getShiftProgress(shift, shift.wib);
   const rawTargetTicker = calcRawTargetTicker(target, shift, progress);
+  const elapsedSeconds = Math.floor(progress.elapsedMinutes * 60);
 
   updateState({
     target_ticker_offset: rawTargetTicker,
+    target_ticker_reset_elapsed_seconds: elapsedSeconds,
   });
 
   return getDashboardData();
@@ -344,10 +348,23 @@ function getDashboardData() {
   const targetTickerOffset = Number.isFinite(state.target_ticker_offset)
     ? state.target_ticker_offset
     : 0;
+  const targetTickerResetElapsedSeconds = Number.isFinite(state.target_ticker_reset_elapsed_seconds)
+    ? Math.max(0, Math.floor(state.target_ticker_reset_elapsed_seconds))
+    : null;
   const rawTargetByInterval = shiftWindowClosed ? 0 : calcRawTargetTicker(target, shift, progress);
-  const targetByInterval = shiftWindowClosed
-    ? 0
-    : Math.max(0, rawTargetByInterval - targetTickerOffset);
+  const remainingTargetAfterReset = Math.max(0, targetPerShift - targetTickerOffset);
+  let targetByInterval;
+  if (shiftWindowClosed) {
+    targetByInterval = 0;
+  } else if (targetTickerResetElapsedSeconds !== null) {
+    const elapsedSinceReset = Math.max(0, elapsedSeconds - targetTickerResetElapsedSeconds);
+    const intervalCountSinceReset = target.interval_seconds > 0
+      ? Math.floor(elapsedSinceReset / target.interval_seconds)
+      : 0;
+    targetByInterval = Math.min(intervalCountSinceReset * target.pcs_per_interval, remainingTargetAfterReset);
+  } else {
+    targetByInterval = Math.max(0, rawTargetByInterval - targetTickerOffset);
+  }
   const behind = expectedByNow - state.count;
   const progressPercent = targetPerShift > 0
     ? Math.min(100, Math.round((state.count / targetPerShift) * 100))
@@ -390,7 +407,7 @@ function getDashboardData() {
     },
     targetTicker: {
       value: targetByInterval,
-      max: shiftWindowClosed ? 0 : Math.max(0, targetPerShift - targetTickerOffset),
+      max: shiftWindowClosed ? 0 : remainingTargetAfterReset,
     },
     analytics: {
       currentRate,
