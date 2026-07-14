@@ -7,6 +7,8 @@ const {
 } = require('../db/database');
 const {
   getCurrentShift,
+  getHistoryShift,
+  getHistoryShiftDate,
   getShiftDate,
   getNextShift,
   getShiftProgress,
@@ -43,8 +45,8 @@ function saveShiftRecord(tanggal, shift, totalBarang) {
 
 function initCounter() {
   const state = getState();
-  const shift = getCurrentShift();
-  const shiftDate = getShiftDate(shift, shift.wib);
+  const shift = getHistoryShift();
+  const shiftDate = getHistoryShiftDate(shift, shift.wib);
   const today = formatDateISO(shift.wib);
   const baselineDeviceCounter = Number.isFinite(state.last_device_counter)
     ? state.last_device_counter
@@ -96,8 +98,9 @@ function handleShiftBoundary() {
     saveShiftRecord(state.shift_date, state.shift, state.count);
   }
 
-  const newShift = getCurrentShift();
-  const shiftDate = getShiftDate(newShift, newShift.wib);
+  const now = new Date();
+  const newShift = getHistoryShift(now);
+  const shiftDate = getHistoryShiftDate(newShift, newShift.wib);
   const today = formatDateISO(newShift.wib);
 
   updateState({
@@ -120,8 +123,8 @@ function handleShiftBoundary() {
 
 function incrementCounter(amount = 1) {
   const state = getState();
-  const shift = getCurrentShift();
-  const shiftDate = getShiftDate(shift, shift.wib);
+  const shift = getHistoryShift();
+  const shiftDate = getHistoryShiftDate(shift, shift.wib);
   const today = formatDateISO(shift.wib);
 
   let count = state.count;
@@ -163,8 +166,8 @@ function incrementCounter(amount = 1) {
 
 function applyDeviceCounter(deviceCounter, deviceTime) {
   const state = getState();
-  const shift = getCurrentShift();
-  const shiftDate = getShiftDate(shift, shift.wib);
+  const shift = getHistoryShift();
+  const shiftDate = getHistoryShiftDate(shift, shift.wib);
   const today = formatDateISO(shift.wib);
 
   let count = state.count;
@@ -238,8 +241,8 @@ function applyDeviceCounter(deviceCounter, deviceTime) {
 
 function resetCounter() {
   const state = getState();
-  const shift = getCurrentShift();
-  const shiftDate = getShiftDate(shift, shift.wib);
+  const shift = getHistoryShift();
+  const shiftDate = getHistoryShiftDate(shift, shift.wib);
   const today = formatDateISO(shift.wib);
   const prevCount = state.count;
 

@@ -39,20 +39,32 @@ const char* mqtt_topic_command = "iot/counter/command";
 const long gmtOffsetSeconds = 7 * 3600; // WIB UTC+7
 const int daylightOffsetSeconds = 0;
 
-// Pin counter/relay dipindah dari GPIO5 agar GPIO5 bisa dipakai TM1637 DIO (pin yang sudah terbukti hidup saat test).
+// ============================================================
+// PILIH PROFIL BOARD
+// ============================================================
+// true  = ESP32 DevKit (ESP32 biasa / WROOM / DOIT)
+// false = ESP32-C3 (profil lama project ini)
+#define USE_ESP32_DEVKIT true
+
+#if USE_ESP32_DEVKIT
+// ESP32 DevKit (aman dari pin strapping yang sensitif)
+const int pinRelay = 27;
+const int pinBtnResetCounter = 25;
+const int pinBtnResetTarget = 26;
+const int rtcSdaPin = 21;
+const int rtcSclPin = 22;
+const int sevenSegClkPin = 18;
+const int sevenSegDioPin = 19;
+#else
+// ESP32-C3 profile (existing)
 const int pinRelay = 10;
-// Tombol reset counter dipindah ke GPIO19 (lebih aman dari pin strapping/boot).
 const int pinBtnResetCounter = 19;
 const int pinBtnResetTarget = 3;
-
-// I2C untuk DS3231-PRO (dipindah dari 8/9 ke 6/7 agar tidak ganggu mode upload)
 const int rtcSdaPin = 6;
 const int rtcSclPin = 7;
-
-// TM1637 seven segment
 const int sevenSegClkPin = 4;
-// Gunakan pin aman yang terlihat tersedia di board (hindari UART/strap pin).
 const int sevenSegDioPin = 5;
+#endif
 
 RTC_DS3231 rtc;
 TM1637Display display(sevenSegClkPin, sevenSegDioPin);

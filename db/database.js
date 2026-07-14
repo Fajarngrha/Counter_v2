@@ -209,9 +209,32 @@ function buildTargetSnapshot(target, shiftName) {
 function saveShiftHistory(tanggal, shift, totalBarang, targetSnapshot) {
   const data = readDb();
   const target = targetSnapshot || buildTargetSnapshot(data.production_target, shift);
+  const existingIdx = data.shift_history.findIndex(
+    (row) => row.tanggal === tanggal && row.shift === shift
+  );
+  const savedAt = nowIso();
+
+  if (existingIdx >= 0) {
+    const existing = data.shift_history[existingIdx];
+    data.shift_history[existingIdx] = {
+      ...existing,
+      tanggal,
+      shift,
+      total_barang: totalBarang,
+      target_per_hour: target.target_per_hour,
+      target_per_shift: target.target_per_shift,
+      model: target.model || '-',
+      pcs_per_interval: target.pcs_per_interval,
+      interval_seconds: target.interval_seconds,
+      shift_duration_hours: target.shift_duration_hours,
+      timestamp_saved: savedAt,
+    };
+    writeDb(data);
+    return { changes: 1, lastInsertRowid: existing.id };
+  }
+
   const id = (data._meta.last_history_id || 0) + 1;
   data._meta.last_history_id = id;
-
   data.shift_history.push({
     id,
     tanggal,
@@ -223,7 +246,7 @@ function saveShiftHistory(tanggal, shift, totalBarang, targetSnapshot) {
     pcs_per_interval: target.pcs_per_interval,
     interval_seconds: target.interval_seconds,
     shift_duration_hours: target.shift_duration_hours,
-    timestamp_saved: nowIso(),
+    timestamp_saved: savedAt,
   });
 
   writeDb(data);

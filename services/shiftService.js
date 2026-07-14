@@ -11,6 +11,11 @@ const DEFAULT_SHIFTS = [
 const dataDir = path.join(__dirname, '..', 'data');
 const shiftConfigPath = path.join(dataDir, 'shift-config.json');
 const SHIFT_NAMES = new Set(['Shift 1', 'Shift 2', 'Shift 3']);
+const HISTORY_BOUNDARIES = [
+  { hour: 0, minute: 0 },
+  { hour: 7, minute: 0 },
+  { hour: 16, minute: 0 },
+];
 
 function toMinutes(hour, minute) {
   return hour * 60 + minute;
@@ -273,6 +278,32 @@ function getCurrentShift(date = new Date()) {
   return { ...SHIFTS[0], wib };
 }
 
+function getHistoryShift(date = new Date()) {
+  const wib = getWIBParts(date);
+  const nowMin = toMinutes(wib.hour, wib.minute);
+
+  if (nowMin >= 7 * 60 && nowMin < 16 * 60) {
+    return { name: 'Shift 1', durationHours: 9, wib };
+  }
+  if (nowMin >= 16 * 60) {
+    return { name: 'Shift 2', durationHours: 8, wib };
+  }
+  return { name: 'Shift 3', durationHours: 7, wib };
+}
+
+function getHistoryShiftDate(shift, wib) {
+  if (shift.name === 'Shift 2' || shift.name === 'Shift 1') {
+    return formatDateISO(wib);
+  }
+
+  // Shift 3 (00:00 - 07:00) dicatat ke tanggal sebelumnya agar urutan histori konsisten.
+  const yesterday = new Date(
+    Date.UTC(wib.year, wib.month - 1, wib.day) - 24 * 60 * 60 * 1000
+  );
+  const yParts = getWIBParts(yesterday);
+  return formatDateISO(yParts);
+}
+
 function getShiftDate(shift, wib) {
   const nowMin = toMinutes(wib.hour, wib.minute);
   const startMin = toMinutes(shift.startHour, shift.startMin);
@@ -352,24 +383,7 @@ function padTime(hour, min) {
 }
 
 function getBoundaryTimes() {
-  const marks = [];
-  const seen = new Set();
-
-  for (const shift of SHIFTS) {
-    const candidates = [
-      { hour: shift.startHour, minute: shift.startMin },
-      { hour: shift.endHour, minute: shift.endMin },
-    ];
-
-    for (const mark of candidates) {
-      const key = `${mark.hour}:${mark.minute}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      marks.push(mark);
-    }
-  }
-
-  return marks;
+  return HISTORY_BOUNDARIES;
 }
 
 function isAtBoundary(wib, lastCheckMin) {
@@ -400,6 +414,8 @@ function getShiftDurationHours(shiftName) {
 module.exports = {
   getWIBParts,
   getCurrentShift,
+  getHistoryShift,
+  getHistoryShiftDate,
   getShiftDate,
   getNextShift,
   getShiftProgress,
