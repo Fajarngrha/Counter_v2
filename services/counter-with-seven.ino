@@ -53,8 +53,9 @@ const int pinBtnResetCounter = 25;
 const int pinBtnResetTarget = 26;
 const int rtcSdaPin = 21;
 const int rtcSclPin = 22;
-const int sevenSegClkPin = 18;
-const int sevenSegDioPin = 19;
+// Disesuaikan dengan wiring existing: TM1637 CLK=4, DIO=5
+const int sevenSegClkPin = 4;
+const int sevenSegDioPin = 5;
 #else
 // ESP32-C3 profile (existing)
 const int pinRelay = 10;
@@ -82,9 +83,9 @@ volatile unsigned long counterEdgeUs = 0;
 bool counterInputArmed = true;
 unsigned long counterHighSinceMs = 0;
 unsigned long lastCounterAcceptedMs = 0;
-const unsigned long counterConfirmUs = 8000;        // 8ms verifikasi level LOW
-const unsigned long counterMinIntervalMs = 180;     // anti multi-count karena chatter/noise
-const unsigned long counterRearmHighStableMs = 40;  // wajib HIGH stabil sebelum re-arm
+const unsigned long counterConfirmUs = 15000;        // 15ms verifikasi level LOW
+const unsigned long counterMinIntervalMs = 300;      // jeda minimum antar count (anti double count)
+const unsigned long counterRearmHighStableMs = 120;  // wajib HIGH stabil sebelum re-arm
 
 portMUX_TYPE mux = portMUX_INITIALIZER_UNLOCKED;
 
