@@ -128,7 +128,7 @@ app.put('/api/target', requireAuth, (req, res) => {
   res.json(target);
 });
 
-app.put('/api/shifts', requireAuth, (req, res) => {
+function handleShiftUpdate(req, res) {
   const { shifts, editPassword } = req.body || {};
   if (!editPassword || editPassword !== config.auth.password) {
     return res.status(403).json({ error: 'Password validasi salah' });
@@ -142,7 +142,11 @@ app.put('/api/shifts', requireAuth, (req, res) => {
   } catch (err) {
     return res.status(400).json({ error: err.message || 'Konfigurasi shift tidak valid' });
   }
-});
+}
+
+app.put('/api/shifts', requireAuth, handleShiftUpdate);
+// Fallback untuk environment/proxy yang membatasi method PUT.
+app.post('/api/shifts', requireAuth, handleShiftUpdate);
 
 app.get('/api/session', (req, res) => {
   res.json({ authenticated: !!(req.session && req.session.authenticated) });

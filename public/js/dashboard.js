@@ -40,6 +40,18 @@ async function putJson(url, body) {
   });
 }
 
+async function saveShiftConfig(shifts, editPassword) {
+  const payload = { shifts, editPassword };
+  try {
+    return await putJson('/api/shifts', payload);
+  } catch (err) {
+    const networkError = err instanceof TypeError || /failed to fetch/i.test(String(err?.message || ''));
+    if (!networkError) throw err;
+    // Fallback untuk proxy/WAF yang blok method PUT.
+    return postJson('/api/shifts', payload);
+  }
+}
+
 const el = (id) => document.getElementById(id);
 
 const counterValueEl = el('counterValue');
@@ -527,11 +539,12 @@ async function init() {
         alert('Simpan jadwal shift dibatalkan. Password wajib diisi.');
         return;
       }
-      const res = await putJson('/api/shifts', { shifts, editPassword });
+      const res = await saveShiftConfig(shifts, editPassword);
       showShiftModal(false);
       render(res.dashboard || await fetchJson('/api/dashboard'));
     } catch (err) {
-      alert(err.message);
+      const networkError = err instanceof TypeError || /failed to fetch/i.test(String(err?.message || ''));
+      alert(networkError ? 'Tidak bisa terhubung ke server saat simpan shift. Coba refresh halaman lalu ulangi.' : err.message);
     }
   });
 

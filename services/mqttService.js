@@ -40,7 +40,7 @@ function parseSensorPayload(raw) {
   } catch {
     const num = parseInt(payload, 10);
     if (!isNaN(num) && num >= 0) {
-      return { counter: num, waktu: null };
+      return { counter: num, waktu: null, mode: 'absolute' };
     }
     throw new Error('Payload bukan JSON valid atau angka counter');
   }
@@ -50,16 +50,31 @@ function parseSensorPayload(raw) {
     throw new Error('Payload JSON tidak memiliki objek data');
   }
 
-  const counterRaw = data.counter ?? data.count ?? data.value ?? data.amount;
-  const counter = Number(counterRaw);
-  if (!Number.isFinite(counter) || counter < 0) {
-    throw new Error('Nilai counter tidak valid');
-  }
-
   const waktuRaw = data.waktu ?? data.timestamp ?? null;
   const waktu = waktuRaw ? String(waktuRaw) : null;
+  if (data.counter !== undefined && data.counter !== null) {
+    const counter = Number(data.counter);
+    if (!Number.isFinite(counter) || counter < 0) {
+      throw new Error('Nilai counter tidak valid');
+    }
+    return { counter: Math.floor(counter), waktu, mode: 'absolute' };
+  }
 
-  return { counter: Math.floor(counter), waktu };
+  // Kompatibilitas: beberapa device kirim nilai increment per event via "count".
+  if (data.count !== undefined && data.count !== null) {
+    const countDelta = Number(data.count);
+    if (!Number.isFinite(countDelta) || countDelta < 0) {
+      throw new Error('Nilai count tidak valid');
+    }
+    return { counter: Math.floor(countDelta), waktu, mode: 'delta' };
+  }
+
+  const fallbackCounterRaw = data.value ?? data.amount;
+  const fallbackCounter = Number(fallbackCounterRaw);
+  if (!Number.isFinite(fallbackCounter) || fallbackCounter < 0) {
+    throw new Error('Nilai counter tidak valid');
+  }
+  return { counter: Math.floor(fallbackCounter), waktu, mode: 'absolute' };
 }
 
 function parseCommandPayload(raw) {
@@ -135,8 +150,18 @@ function initMqtt(broadcast) {
         return;
       }
 
-      const { counter, waktu } = parseSensorPayload(message);
-      const data = applyDeviceCounter(counter, waktu);
+      const { counter, waktu, mode } = parseSensorPayload(message);
+      let data;
+      if (mode === 'delta') {
+        const state = getState();
+        const base = Number.isFinite(state.last_device_counter)
+          ? state.last_device_counter
+          : Number.isFinite(state.count) ? state.count : 0;
+        const syntheticAbsolute = base + counter;
+        data = applyDeviceCounter(syntheticAbsolute, waktu);
+      } else {
+        data = applyDeviceCounter(counter, waktu);
+      }
       if (broadcastFn) broadcastFn(data);
     } catch (err) {
       console.error('[MQTT] Error memproses pesan:', err.message);
