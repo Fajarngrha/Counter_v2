@@ -205,7 +205,9 @@ function applyDeviceCounter(deviceCounter, deviceTime) {
 
   // Migrasi mulus dari mode lama (absolute counter) ke mode offset.
   if (deviceOffset === null) {
-    deviceOffset = Math.max(0, nextDeviceCounter - count);
+    // Izinkan offset bernilai negatif supaya migrasi dari mode lama tetap mulus
+    // walau counter device sempat mulai lagi dari angka kecil.
+    deviceOffset = nextDeviceCounter - count;
   }
 
   // Setelah reset dashboard, paket pertama dari device dijadikan anchor.
@@ -213,8 +215,9 @@ function applyDeviceCounter(deviceCounter, deviceTime) {
   if (deviceResetPending) {
     deviceOffset = nextDeviceCounter > 0 ? (nextDeviceCounter - 1) : 0;
   } else if (lastDeviceCounter !== null && nextDeviceCounter < lastDeviceCounter) {
-    // Jika counter device turun (misalnya device reset), jangkar offset disesuaikan ulang.
-    deviceOffset = Math.max(0, nextDeviceCounter - count);
+    // Jika counter device turun (misalnya device reset), offset boleh negatif
+    // agar counter dashboard tetap lanjut dari angka sekarang (tanpa freeze).
+    deviceOffset = nextDeviceCounter - count;
   }
 
   const mappedCounter = Math.max(0, nextDeviceCounter - deviceOffset);
