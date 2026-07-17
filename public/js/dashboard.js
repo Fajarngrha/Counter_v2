@@ -58,11 +58,13 @@ const counterValueEl = el('counterValue');
 const counterTargetValueEl = el('counterTargetValue');
 const progressFillEl = el('progressFill');
 const projectionWrapEl = el('projectionWrap');
+const deviceGridEl = el('deviceGrid');
 
 let lastCounter = null;
 let lastTargetTickerValue = null;
 let latestDashboardData = null;
 let targetTickerState = null;
+let selectedDeviceId = null;
 
 function loadTargetFromStorage() {
   try {
@@ -98,6 +100,12 @@ function getProgressColorClass(percent) {
 function pulseCounter() {
   counterValueEl.classList.add('pulse');
   setTimeout(() => counterValueEl.classList.remove('pulse'), 150);
+}
+
+async function refreshDashboard(forceDeviceId) {
+  const deviceId = forceDeviceId || selectedDeviceId;
+  const query = deviceId ? `?deviceId=${encodeURIComponent(deviceId)}` : '';
+  return fetchJson(`/api/dashboard${query}`);
 }
 
 function syncTargetTickerState(data) {
@@ -353,13 +361,21 @@ function requestTargetPassword(options = {}) {
 
 function render(data) {
   latestDashboardData = data;
+  if (!selectedDeviceId) {
+    selectedDeviceId = data.selectedDeviceId || null;
+  } else {
+    const hasSelected = Array.isArray(data.devices) && data.devices.some((device) => device.id === selectedDeviceId);
+    if (!hasSelected) {
+      selectedDeviceId = data.selectedDeviceId || selectedDeviceId;
+    }
+  }
 
   el('timeNow').textContent = data.time || '--.--.--';
   el('dateNow').textContent = data.date || '-';
 
   el('shiftLabel').textContent = data.shift?.label || '-';
   el('shiftRange').textContent = data.shift?.timeRange || '-';
-  el('counterTitle').textContent = `TOTAL BARANG — ${data.shift?.name || '-'}`;
+  el('counterTitle').textContent = `TOTAL BARANG — ${data.shift?.name || '-'}${selectedDeviceId ? ` (${selectedDeviceId})` : ''}`;
 
   const newCounter = data.counter || 0;
   counterValueEl.textContent = fmtNumber(newCounter);
@@ -367,7 +383,9 @@ function render(data) {
   lastCounter = newCounter;
 
   const iotOnline = !!data.iot?.online;
-  el('iotStatus').textContent = iotOnline ? 'Online' : 'Offline';
+  const totalDevices = Number(data.totals?.totalDevices || data.devices?.length || 0);
+  const onlineDevices = Number(data.totals?.onlineDevices || 0);
+  el('iotStatus').textContent = iotOnline ? `Online (${onlineDevices}/${totalDevices})` : `Offline (0/${totalDevices})`;
   el('iotStatus').className = `status-value ${iotOnline ? 'status-online' : 'status-offline'}`;
   el('iotStatus').style.fontSize = '1.2rem';
   if (data.sensor?.lastDeviceTime) {
@@ -408,7 +426,47 @@ function render(data) {
   el('nextShiftName').textContent = data.nextShift?.name || '-';
   el('nextShiftStart').textContent = data.nextShift?.startTime || '-';
 
+  renderDeviceCards(data.devices || [], selectedDeviceId);
+
   syncTargetTickerState(data);
+}
+
+function renderDeviceCards(devices, activeDeviceId) {
+  if (!deviceGridEl) return;
+  if (!Array.isArray(devices) || devices.length === 0) {
+    deviceGridEl.innerHTML = '<div class="device-meta">Belum ada device aktif.</div>';
+    return;
+  }
+
+  deviceGridEl.innerHTML = devices.map((device) => {
+    const isActive = device.id === activeDeviceId;
+    const statusClass = device.iot?.online ? 'status-online' : 'status-offline';
+    const statusText = device.iot?.online ? 'Online' : 'Offline';
+    return `
+      <button class="device-item ${isActive ? 'device-item--active' : ''}" type="button" data-device-id="${device.id}">
+        <div class="device-item-top">
+          <span class="device-id">${device.id}</span>
+          <span class="${statusClass}" style="font-size:0.75rem;">${statusText}</span>
+        </div>
+        <div class="device-count">${fmtNumber(device.count)}</div>
+        <div class="device-meta">Daily: ${fmtNumber(device.dailyTotal)}</div>
+      </button>
+    `;
+  }).join('');
+
+  deviceGridEl.querySelectorAll('[data-device-id]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const nextDeviceId = btn.getAttribute('data-device-id');
+      if (!nextDeviceId || nextDeviceId === selectedDeviceId) return;
+      selectedDeviceId = nextDeviceId;
+      try {
+        const latest = await refreshDashboard(nextDeviceId);
+        render(latest);
+      } catch (err) {
+        alert(err.message || 'Gagal memuat data device');
+      }
+    });
+  });
 }
 
 async function syncTargetToServer(model, pcsPerInterval, intervalSeconds, editPassword) {
@@ -441,12 +499,21 @@ async function init() {
 
   await initTargetConfig();
 
-  const initial = await fetchJson('/api/dashboard');
+  const initial = await refreshDashboard();
   render(initial);
 
   if (typeof io === 'function') {
     const socket = io();
-    socket.on('dashboard:update', (data) => {
+    socket.on('dashboard:update', async (data) => {
+      if (selectedDeviceId && data.selectedDeviceId && data.selectedDeviceId !== selectedDeviceId) {
+        try {
+          const fresh = await refreshDashboard(selectedDeviceId);
+          render(fresh);
+          return;
+        } catch (err) {
+          console.warn('Gagal sinkron dashboard device terpilih:', err.message);
+        }
+      }
       render(data);
     });
   } else {
@@ -469,7 +536,7 @@ async function init() {
 
     try {
       el('btnResetCounter').disabled = true;
-      const data = await postJson('/api/counter/reset', {});
+      const data = await postJson('/api/counter/reset', { deviceId: selectedDeviceId });
       render(data);
     } catch (err) {
       alert(err.message);
@@ -486,7 +553,7 @@ async function init() {
 
     try {
       el('btnResetTargetTicker').disabled = true;
-      const data = await postJson('/api/target-ticker/reset', {});
+      const data = await postJson('/api/target-ticker/reset', { deviceId: selectedDeviceId });
       render(data);
     } catch (err) {
       alert(err.message);
@@ -603,7 +670,7 @@ async function init() {
 
       setEditMode(false);
 
-      const updated = await fetchJson('/api/dashboard');
+      const updated = await refreshDashboard(selectedDeviceId);
       render(updated);
     } catch (err) {
       alert(err.message);

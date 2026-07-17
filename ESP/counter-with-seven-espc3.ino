@@ -9,6 +9,7 @@
 
 const char* ssid = "FID";
 const char* password = "FCC_2022#idn";
+
 #if USE_HIVEMQ_CLOUD
 const char* mqtt_server = "e49b2fe6d5eb4d3fa5267a1ab8ff12d5.s1.eu.hivemq.cloud";  // contoh: xxxx.s1.eu.hivemq.cloud
 const int mqtt_port = 8883;
@@ -21,24 +22,22 @@ const char* mqtt_user = nullptr;
 const char* mqtt_pass = nullptr;
 #endif
 
-const char* mqtt_topic = "iot/counter/increment";
-const char* mqtt_topic_command = "iot/counter/command";
+const char* deviceId = "device-espc3-01";
+const char* mqtt_topic_base = "iot/counter";
+String mqtt_topic = "";
+String mqtt_topic_command = "";
 const long gmtOffsetSeconds = 7 * 3600; // WIB UTC+7
 const int daylightOffsetSeconds = 0;
 
-#define USE_ESP32_DEVKIT true
 
-#if USE_ESP32_DEVKIT
-// ESP32 DevKit (aman dari pin strapping yang sensitif)
-const int pinRelay = 27;
-const int pinBtnResetCounter = 25;
-const int pinBtnResetTarget = 26;
-const int rtcSdaPin = 21;
-const int rtcSclPin = 22;
+const int pinRelay = 10;
+const int pinBtnResetCounter = 19;
+const int pinBtnResetTarget = 3;
+const int rtcSdaPin = 6;
+const int rtcSclPin = 7;
 const int sevenSegClkPin = 4;
 const int sevenSegDioPin = 5;
-const int pinLedPower = 32;   // LED merah (power): ON terus setelah boot
-const int pinLedWifi = 33;    // LED hijau: ON saat WiFi tersambung
+
 
 RTC_DS3231 rtc;
 TM1637Display display(sevenSegClkPin, sevenSegDioPin);
@@ -115,6 +114,7 @@ void triggerCounterResetFromButton();
 void triggerTargetResetFromButton();
 DateTime getCurrentDateTimeWib();
 void processCounterInput();
+void buildMqttTopics();
 
 struct ShiftInfo {
   const char* name;
@@ -176,6 +176,11 @@ long parseLongField(const String& json, const char* key, long fallbackValue) {
   return json.substring(idx, endIdx).toInt();
 }
 
+void buildMqttTopics() {
+  mqtt_topic = String(mqtt_topic_base) + "/" + String(deviceId) + "/increment";
+  mqtt_topic_command = String(mqtt_topic_base) + "/" + String(deviceId) + "/command";
+}
+
 void IRAM_ATTR hitungBarang() {
   const unsigned long nowUs = micros();
   // Catat edge saja di ISR. Validasi pulse dilakukan di loop agar lebih tahan noise.
@@ -189,7 +194,6 @@ bool setup_wifi(unsigned long timeoutMs) {
   delay(10);
   Serial.print("Menghubungkan ke WiFi: ");
   Serial.println(ssid);
-  digitalWrite(pinLedWifi, LOW);
 
   WiFi.mode(WIFI_STA);
   WiFi.begin(ssid, password);
@@ -210,13 +214,11 @@ bool setup_wifi(unsigned long timeoutMs) {
     Serial.println("\nWiFi Terhubung!");
     Serial.print("IP ESP32: ");
     Serial.println(WiFi.localIP());
-    digitalWrite(pinLedWifi, HIGH);
     showSevenSegStatus(4444);
     return true;
   }
 
   Serial.println("\nWiFi gagal tersambung dalam batas waktu. Sistem tetap lanjut tanpa WiFi.");
-  digitalWrite(pinLedWifi, LOW);
   showSevenSegStatus(4040);
   delay(1000);
   return false;
@@ -226,7 +228,7 @@ bool reconnectMqtt() {
   if (client.connected()) return true;
 
   Serial.print("Mencoba koneksi MQTT...");
-  String clientId = "ESP32Client-";
+  String clientId = "ESP32C3Client-";
   clientId += String((uint32_t)ESP.getEfuseMac(), HEX);
 
   bool ok = false;
@@ -238,7 +240,7 @@ bool reconnectMqtt() {
 
   if (ok) {
     Serial.println(" Berhasil Terhubung ke Broker!");
-    client.subscribe(mqtt_topic_command);
+    client.subscribe(mqtt_topic_command.c_str());
     Serial.print("Subscribe ke: ");
     Serial.println(mqtt_topic_command);
     return true;
@@ -325,9 +327,9 @@ void publishCounterSnapshot() {
   portEXIT_CRITICAL(&mux);
 
   String waktu = getRtcTimestamp();
-  String payload = "[{\"waktu\":\"" + waktu + "\",\"counter\":" + String(snapshotCounter) + "}]";
+  String payload = "[{\"deviceId\":\"" + String(deviceId) + "\",\"waktu\":\"" + waktu + "\",\"counter\":" + String(snapshotCounter) + "}]";
 
-  if (client.publish(mqtt_topic, payload.c_str())) {
+  if (client.publish(mqtt_topic.c_str(), payload.c_str())) {
     lastCounterSent = snapshotCounter;
     Serial.print("Snapshot counter dikirim: ");
     Serial.println(payload);
@@ -658,7 +660,8 @@ void triggerCounterResetFromButton() {
   publishCounterSnapshot();
 
   if (client.connected()) {
-    client.publish(mqtt_topic_command, "{\"action\":\"reset\",\"source\":\"device\"}");
+    String payload = "{\"action\":\"reset\",\"source\":\"device\",\"deviceId\":\"" + String(deviceId) + "\"}";
+    client.publish(mqtt_topic_command.c_str(), payload.c_str());
   }
 }
 
@@ -714,8 +717,8 @@ void triggerTargetResetFromButton() {
   updateSevenSegmentDisplay();
 
   if (client.connected()) {
-    String payload = "{\"action\":\"target_ticker_reset\",\"source\":\"device\",\"targetTickerOffset\":" + String(targetTickerOffset) + "}";
-    client.publish(mqtt_topic_command, payload.c_str());
+    String payload = "{\"action\":\"target_ticker_reset\",\"source\":\"device\",\"deviceId\":\"" + String(deviceId) + "\",\"targetTickerOffset\":" + String(targetTickerOffset) + "}";
+    client.publish(mqtt_topic_command.c_str(), payload.c_str());
   }
 }
 
@@ -761,10 +764,13 @@ void setup() {
   Serial.begin(115200);
   delay(2000);
   Serial.println("\n--- Sistem Smart Counter (Seven Segment + DS3231) Memulai ---");
-  pinMode(pinLedPower, OUTPUT);
-  pinMode(pinLedWifi, OUTPUT);
-  digitalWrite(pinLedPower, HIGH);
-  digitalWrite(pinLedWifi, LOW);
+  buildMqttTopics();
+  Serial.print("Device ID: ");
+  Serial.println(deviceId);
+  Serial.print("Topic increment: ");
+  Serial.println(mqtt_topic);
+  Serial.print("Topic command: ");
+  Serial.println(mqtt_topic_command);
 
   // ============================================================
   // TEST TM1637 PALING AWAL
@@ -849,7 +855,6 @@ void loop() {
   handleSerialRtcCalibration();
   processCounterInput();
   handleButtons();
-  digitalWrite(pinLedWifi, WiFi.status() == WL_CONNECTED ? HIGH : LOW);
 
   // Coba konek ulang WiFi secara ringan jika sebelumnya gagal/terputus.
   static unsigned long lastWifiReconnectAttempt = 0;
@@ -880,9 +885,9 @@ void loop() {
 
   if (snapshotCounter != lastCounterSent && client.connected()) {
     String waktu = getRtcTimestamp();
-    String payload = "[{\"waktu\":\"" + waktu + "\",\"counter\":" + String(snapshotCounter) + "}]";
+    String payload = "[{\"deviceId\":\"" + String(deviceId) + "\",\"waktu\":\"" + waktu + "\",\"counter\":" + String(snapshotCounter) + "}]";
 
-    bool ok = client.publish(mqtt_topic, payload.c_str());
+    bool ok = client.publish(mqtt_topic.c_str(), payload.c_str());
 
     Serial.println("--------------------------------------------------");
     if (ok) {

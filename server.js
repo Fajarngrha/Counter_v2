@@ -10,6 +10,7 @@ const {
   getDashboardData,
   resetCounter,
   resetTargetTicker,
+  getDeviceIds,
 } = require('./services/counterService');
 const { getShiftConfig, setShiftConfig } = require('./services/shiftService');
 const {
@@ -72,15 +73,17 @@ app.post('/api/logout', (req, res) => {
 });
 
 app.get('/api/dashboard', requireAuth, (req, res) => {
-  res.json(getDashboardData());
+  const deviceId = typeof req.query.deviceId === 'string' ? req.query.deviceId : undefined;
+  res.json(getDashboardData({ deviceId }));
 });
 
 app.get('/api/history', requireAuth, (req, res) => {
   const end = req.query.end || new Date().toISOString().slice(0, 10);
   const start = req.query.start || end;
   const shift = req.query.shift || 'all';
+  const device = req.query.device || 'all';
   const search = req.query.search || '';
-  res.json(getHistory(start, end, { shift, search }));
+  res.json(getHistory(start, end, { shift, device, search }));
 });
 
 app.get('/api/target', requireAuth, (req, res) => {
@@ -92,17 +95,24 @@ app.get('/api/shifts', requireAuth, (req, res) => {
 });
 
 app.post('/api/counter/reset', requireAuth, (req, res) => {
-  publishDeviceReset();
-  const data = resetCounter();
-  publishTargetTickerValue(data?.targetTicker?.value ?? 0);
+  const deviceId = req.body?.deviceId;
+  publishDeviceReset(deviceId);
+  const data = resetCounter(deviceId);
+  const selectedDeviceId = data?.selectedDeviceId;
+  publishTargetTickerValue(data?.targetTicker?.value ?? 0, { deviceId: selectedDeviceId });
   broadcastDashboard(data);
   res.json(data);
 });
 
 app.post('/api/target-ticker/reset', requireAuth, (req, res) => {
-  const data = resetTargetTicker();
-  publishTargetTickerReset({ targetTickerOffset: getState().target_ticker_offset });
-  publishTargetTickerValue(data?.targetTicker?.value ?? 0);
+  const deviceId = req.body?.deviceId;
+  const data = resetTargetTicker(deviceId);
+  const selectedDeviceId = data?.selectedDeviceId;
+  publishTargetTickerReset({
+    targetTickerOffset: getState(selectedDeviceId).target_ticker_offset,
+    deviceId: selectedDeviceId,
+  });
+  publishTargetTickerValue(data?.targetTicker?.value ?? 0, { deviceId: selectedDeviceId });
   broadcastDashboard(data);
   res.json(data);
 });
@@ -123,8 +133,11 @@ app.put('/api/target', requireAuth, (req, res) => {
     safeModel
   );
   const target = getTarget();
-  publishTargetConfig(target, { targetTickerOffset: getState().target_ticker_offset });
-  publishTargetTickerValue(getDashboardData()?.targetTicker?.value ?? 0);
+  const deviceIds = getDeviceIds();
+  deviceIds.forEach((deviceId) => {
+    publishTargetConfig(target, { targetTickerOffset: getState(deviceId).target_ticker_offset, deviceId });
+    publishTargetTickerValue(getDashboardData({ deviceId })?.targetTicker?.value ?? 0, { deviceId });
+  });
   res.json(target);
 });
 
@@ -170,7 +183,9 @@ io.on('connection', (socket) => {
 
 initCounter();
 initMqtt(broadcastDashboard);
-publishTargetConfig(getTarget(), { targetTickerOffset: getState().target_ticker_offset });
+getDeviceIds().forEach((deviceId) => {
+  publishTargetConfig(getTarget(), { targetTickerOffset: getState(deviceId).target_ticker_offset, deviceId });
+});
 
 setInterval(() => {
   if (handleShiftBoundary()) {
@@ -180,7 +195,11 @@ setInterval(() => {
 
 setInterval(() => {
   const data = getDashboardData();
-  publishTargetTickerValue(data?.targetTicker?.value ?? 0);
+  const deviceIds = getDeviceIds();
+  deviceIds.forEach((deviceId) => {
+    const perDevice = getDashboardData({ deviceId });
+    publishTargetTickerValue(perDevice?.targetTicker?.value ?? 0, { deviceId });
+  });
   broadcastDashboard(data);
 }, 1000);
 

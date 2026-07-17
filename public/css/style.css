@@ -360,6 +360,52 @@ body {
   font-size: 2.5rem;
 }
 
+.device-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 0.65rem;
+}
+
+.device-item {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-input);
+  padding: 0.6rem 0.75rem;
+  cursor: pointer;
+}
+
+.device-item--active {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px rgba(31, 111, 235, 0.35);
+}
+
+.device-item-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.3rem;
+}
+
+.device-id {
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
+.device-count {
+  font-size: 1.35rem;
+  line-height: 1.1;
+  font-weight: 700;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+
+.device-meta {
+  margin-top: 0.2rem;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
 .target-card {
   flex: 1;
 }

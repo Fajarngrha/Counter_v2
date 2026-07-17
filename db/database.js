@@ -89,6 +89,8 @@ const DEMO_HISTORY = [
   },
 ];
 
+const DEFAULT_DEVICE_ID = 'device-1';
+
 function nowIso() {
   return new Date().toISOString();
 }
@@ -103,6 +105,7 @@ function normalizeHistoryRow(row, fallbackTarget) {
 
   return {
     ...row,
+    device_id: row.device_id || 'legacy',
     shift_duration_hours: duration,
     target_per_hour: targetPerHour,
     target_per_shift: targetPerShift,
@@ -123,26 +126,80 @@ function seedDemoHistory(data) {
   data._meta.last_history_id = id;
 }
 
+function createDefaultCurrentState(today) {
+  return {
+    shift: 'Shift 1',
+    shift_date: today,
+    count: 0,
+    daily_total: 0,
+    daily_date: today,
+    last_iot_seen: null,
+    last_device_time: null,
+    last_device_counter: null,
+    device_offset: 0,
+    device_reset_pending: false,
+    target_ticker_offset: 0,
+    target_ticker_reset_elapsed_seconds: null,
+    updated_at: nowIso(),
+  };
+}
+
+function normalizeDeviceState(state = {}) {
+  return {
+    shift: 'Shift 1',
+    shift_date: null,
+    count: 0,
+    daily_total: 0,
+    daily_date: null,
+    last_iot_seen: null,
+    last_device_time: null,
+    last_device_counter: null,
+    device_offset: 0,
+    device_reset_pending: false,
+    target_ticker_offset: 0,
+    target_ticker_reset_elapsed_seconds: null,
+    updated_at: nowIso(),
+    ...state,
+  };
+}
+
+function migrateLegacyStateToDevices(data) {
+  if (!data.devices || typeof data.devices !== 'object') {
+    data.devices = {};
+  }
+
+  const keys = Object.keys(data.devices);
+  if (keys.length === 0) {
+    const legacy = data.current_state ? normalizeDeviceState(data.current_state) : null;
+    data.devices[DEFAULT_DEVICE_ID] = legacy || normalizeDeviceState();
+  }
+
+  const normalizedDevices = {};
+  for (const [deviceId, state] of Object.entries(data.devices)) {
+    if (!deviceId) continue;
+    normalizedDevices[deviceId] = normalizeDeviceState(state);
+  }
+  data.devices = normalizedDevices;
+
+  const selected = String(data.selected_device_id || '').trim();
+  if (!selected || !data.devices[selected]) {
+    data.selected_device_id = Object.keys(data.devices)[0] || DEFAULT_DEVICE_ID;
+  }
+
+  // Pertahankan kompatibilitas field lama untuk komponen yang belum migrasi.
+  data.current_state = normalizeDeviceState(data.devices[data.selected_device_id]);
+}
+
 function readDb() {
   if (!fs.existsSync(dbPath)) {
     const today = new Date().toISOString().slice(0, 10);
     const initial = {
       shift_history: [],
-      current_state: {
-        shift: 'Shift 1',
-        shift_date: today,
-        count: 0,
-        daily_total: 0,
-        daily_date: today,
-        last_iot_seen: null,
-        last_device_time: null,
-        last_device_counter: null,
-        device_offset: 0,
-        device_reset_pending: false,
-        target_ticker_offset: 0,
-        target_ticker_reset_elapsed_seconds: null,
-        updated_at: nowIso(),
+      current_state: createDefaultCurrentState(today),
+      devices: {
+        [DEFAULT_DEVICE_ID]: createDefaultCurrentState(today),
       },
+      selected_device_id: DEFAULT_DEVICE_ID,
       production_target: {
         target_per_hour: 1800,
         model: '-',
@@ -162,6 +219,7 @@ function readDb() {
   if (!data._meta) data._meta = { last_history_id: 0 };
   if (!data._meta.demo_seeded) mutated = true;
   if (!data.shift_history) data.shift_history = [];
+  migrateLegacyStateToDevices(data);
   if (!data.production_target) {
     data.production_target = {
       target_per_hour: 1800,
@@ -206,11 +264,12 @@ function buildTargetSnapshot(target, shiftName) {
   };
 }
 
-function saveShiftHistory(tanggal, shift, totalBarang, targetSnapshot) {
+function saveShiftHistory(tanggal, shift, totalBarang, targetSnapshot, deviceId = DEFAULT_DEVICE_ID) {
   const data = readDb();
   const target = targetSnapshot || buildTargetSnapshot(data.production_target, shift);
+  const safeDeviceId = String(deviceId || '').trim() || DEFAULT_DEVICE_ID;
   const existingIdx = data.shift_history.findIndex(
-    (row) => row.tanggal === tanggal && row.shift === shift
+    (row) => row.tanggal === tanggal && row.shift === shift && (row.device_id || 'legacy') === safeDeviceId
   );
   const savedAt = nowIso();
 
@@ -220,6 +279,7 @@ function saveShiftHistory(tanggal, shift, totalBarang, targetSnapshot) {
       ...existing,
       tanggal,
       shift,
+      device_id: safeDeviceId,
       total_barang: totalBarang,
       target_per_hour: target.target_per_hour,
       target_per_shift: target.target_per_shift,
@@ -239,6 +299,7 @@ function saveShiftHistory(tanggal, shift, totalBarang, targetSnapshot) {
     id,
     tanggal,
     shift,
+    device_id: safeDeviceId,
     total_barang: totalBarang,
     target_per_hour: target.target_per_hour,
     target_per_shift: target.target_per_shift,
@@ -256,7 +317,7 @@ function saveShiftHistory(tanggal, shift, totalBarang, targetSnapshot) {
 function getHistory(startDate, endDate, options = {}) {
   const data = readDb();
   const fallbackTarget = data.production_target;
-  const { shift = 'all', search = '' } = options;
+  const { shift = 'all', device = 'all', search = '' } = options;
   const q = search.trim().toLowerCase();
 
   let rows = data.shift_history.filter(
@@ -267,9 +328,13 @@ function getHistory(startDate, endDate, options = {}) {
     rows = rows.filter((r) => r.shift === shift);
   }
 
+  if (device && device !== 'all') {
+    rows = rows.filter((r) => (r.device_id || 'legacy') === device);
+  }
+
   if (q) {
     rows = rows.filter((r) => {
-      const haystack = `${r.tanggal} ${r.shift} ${r.total_barang}`.toLowerCase();
+      const haystack = `${r.tanggal} ${r.shift} ${r.total_barang} ${r.device_id || 'legacy'}`.toLowerCase();
       return haystack.includes(q);
     });
   }
@@ -296,6 +361,7 @@ function getHistory(startDate, endDate, options = {}) {
 
   return {
     rows: enriched,
+    devices: Array.from(new Set(data.shift_history.map((r) => r.device_id || 'legacy'))).sort(),
     summary: {
       totalRecords: enriched.length,
       totalBarang,
@@ -305,27 +371,46 @@ function getHistory(startDate, endDate, options = {}) {
   };
 }
 
-function getState() {
-  const data = readDb();
-  return {
-    last_device_time: null,
-    last_device_counter: null,
-    device_offset: 0,
-    device_reset_pending: false,
-    target_ticker_offset: 0,
-    target_ticker_reset_elapsed_seconds: null,
-    ...data.current_state,
-  };
+function getState(deviceId = DEFAULT_DEVICE_ID) {
+  return getStateByDevice(deviceId);
 }
 
-function updateState(fields) {
+function updateState(fields, deviceId = DEFAULT_DEVICE_ID) {
+  return updateStateByDevice(fields, deviceId);
+}
+
+function getStateByDevice(deviceId = DEFAULT_DEVICE_ID) {
   const data = readDb();
-  data.current_state = {
-    ...data.current_state,
+  const safeDeviceId = String(deviceId || '').trim() || DEFAULT_DEVICE_ID;
+  const existing = data.devices[safeDeviceId];
+  return normalizeDeviceState(existing || {});
+}
+
+function updateStateByDevice(fields, deviceId = DEFAULT_DEVICE_ID) {
+  const data = readDb();
+  const safeDeviceId = String(deviceId || '').trim() || DEFAULT_DEVICE_ID;
+  const next = {
+    ...normalizeDeviceState(data.devices[safeDeviceId]),
     ...fields,
     updated_at: nowIso(),
   };
+  data.devices[safeDeviceId] = next;
+  data.selected_device_id = safeDeviceId;
+  data.current_state = next;
   writeDb(data);
+}
+
+function getAllDeviceStates() {
+  const data = readDb();
+  const out = {};
+  for (const [deviceId, state] of Object.entries(data.devices || {})) {
+    out[deviceId] = normalizeDeviceState(state);
+  }
+  return out;
+}
+
+function getDeviceIds() {
+  return Object.keys(getAllDeviceStates());
 }
 
 function getTarget() {
@@ -349,6 +434,10 @@ module.exports = {
   getHistory,
   getState,
   updateState,
+  getStateByDevice,
+  updateStateByDevice,
+  getAllDeviceStates,
+  getDeviceIds,
   getTarget,
   updateTarget,
   buildTargetSnapshot,

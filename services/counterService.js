@@ -1,6 +1,8 @@
 const {
-  getState,
-  updateState,
+  getStateByDevice,
+  updateStateByDevice,
+  getAllDeviceStates,
+  getDeviceIds,
   saveShiftHistory,
   getTarget,
   buildTargetSnapshot,
@@ -21,8 +23,7 @@ const {
 } = require('./shiftService');
 
 let lastBoundaryMin = -1;
-let shiftStartCount = 0;
-let shiftStartTime = null;
+let lastSelectedDeviceId = null;
 
 function calcTargetPerShift(targetPerHour, durationHours) {
   return Math.max(0, Math.round((targetPerHour || 0) * (durationHours || 0)));
@@ -38,45 +39,123 @@ function calcRawTargetTicker(target, shift, progress) {
   return Math.min(intervalCount * target.pcs_per_interval, targetPerShift);
 }
 
-function saveShiftRecord(tanggal, shift, totalBarang) {
+function saveShiftRecord(tanggal, shift, totalBarang, deviceId = 'device-1') {
   const target = buildTargetSnapshot(getTarget(), shift);
-  saveShiftHistory(tanggal, shift, totalBarang, target);
+  saveShiftHistory(tanggal, shift, totalBarang, target, deviceId);
 }
 
-function initCounter() {
-  const state = getState();
-  const shift = getHistoryShift();
-  const shiftDate = getHistoryShiftDate(shift, shift.wib);
-  const today = formatDateISO(shift.wib);
-  const baselineDeviceCounter = Number.isFinite(state.last_device_counter)
-    ? state.last_device_counter
-    : null;
-  const baselineOffset = baselineDeviceCounter !== null
-    ? baselineDeviceCounter
-    : (Number.isFinite(state.device_offset) ? state.device_offset : 0);
+function normalizeDeviceId(deviceId) {
+  const id = String(deviceId || '').trim();
+  return id || 'device-1';
+}
 
-  if (state.shift !== shift.name || state.shift_date !== shiftDate) {
-    if (state.count > 0 || state.shift !== shift.name) {
-      saveShiftRecord(state.shift_date, state.shift, state.count);
-    }
-    updateState({
+function syncStateForCurrentShift(state, shift, shiftDate, today) {
+  let next = { ...state };
+  if (next.shift !== shift.name || next.shift_date !== shiftDate) {
+    next = {
+      ...next,
       shift: shift.name,
       shift_date: shiftDate,
       count: 0,
-      daily_total: state.daily_date === today ? state.daily_total : 0,
+      target_ticker_offset: 0,
+      target_ticker_reset_elapsed_seconds: null,
+    };
+  }
+  if (next.daily_date !== today) {
+    next = {
+      ...next,
+      daily_total: 0,
       daily_date: today,
+    };
+  }
+  return next;
+}
+
+function getResolvedSelectedDeviceId(requestedId, devicesState) {
+  const ids = Object.keys(devicesState);
+  if (ids.length === 0) return 'device-1';
+  const requested = normalizeDeviceId(requestedId);
+  if (requested && devicesState[requested]) return requested;
+  if (lastSelectedDeviceId && devicesState[lastSelectedDeviceId]) return lastSelectedDeviceId;
+  return ids.sort()[0];
+}
+
+function buildIotStatus(lastSeenIso) {
+  if (!lastSeenIso) return { online: false, lastSeen: null, lastSeenText: 'Belum pernah terhubung' };
+
+  const lastSeen = new Date(lastSeenIso);
+  const diffMs = Date.now() - lastSeen.getTime();
+  const online = diffMs < 30000;
+
+  let lastSeenText;
+  if (diffMs < 60000) {
+    lastSeenText = 'Baru saja';
+  } else if (diffMs < 3600000) {
+    lastSeenText = `${Math.floor(diffMs / 60000)}m lalu`;
+  } else if (diffMs < 86400000) {
+    lastSeenText = `${Math.floor(diffMs / 3600000)}j lalu`;
+  } else {
+    lastSeenText = `${Math.floor(diffMs / 86400000)}d lalu`;
+  }
+  return { online, lastSeen: lastSeenIso, lastSeenText };
+}
+
+function calcTargetTickerByState(state, target, progress) {
+  const elapsedSeconds = Math.floor(progress.elapsedMinutes * 60);
+  const totalSeconds = Math.floor(progress.totalMinutes * 60);
+  const shiftWindowClosed = elapsedSeconds >= totalSeconds;
+  const targetPerShift = calcTargetPerShift(target.target_per_hour, progress.shiftDurationHours);
+  const targetTickerOffset = Number.isFinite(state.target_ticker_offset)
+    ? state.target_ticker_offset
+    : 0;
+  const targetTickerResetElapsedSeconds = Number.isFinite(state.target_ticker_reset_elapsed_seconds)
+    ? Math.max(0, Math.floor(state.target_ticker_reset_elapsed_seconds))
+    : null;
+  const rawTargetByInterval = shiftWindowClosed
+    ? 0
+    : calcRawTargetTicker(target, { durationHours: progress.shiftDurationHours }, progress);
+  const remainingTargetAfterReset = Math.max(0, targetPerShift - targetTickerOffset);
+
+  let targetByInterval;
+  if (shiftWindowClosed) {
+    targetByInterval = 0;
+  } else if (targetTickerResetElapsedSeconds !== null) {
+    const elapsedSinceReset = Math.max(0, elapsedSeconds - targetTickerResetElapsedSeconds);
+    const intervalCountSinceReset = target.interval_seconds > 0
+      ? Math.floor(elapsedSinceReset / target.interval_seconds)
+      : 0;
+    targetByInterval = Math.min(intervalCountSinceReset * target.pcs_per_interval, remainingTargetAfterReset);
+  } else {
+    targetByInterval = Math.max(0, rawTargetByInterval - targetTickerOffset);
+  }
+
+  return {
+    value: targetByInterval,
+    max: shiftWindowClosed ? 0 : remainingTargetAfterReset,
+  };
+}
+
+function initCounter() {
+  const devices = getAllDeviceStates();
+  const shift = getHistoryShift();
+  const shiftDate = getHistoryShiftDate(shift, shift.wib);
+  const today = formatDateISO(shift.wib);
+
+  for (const [deviceId, state] of Object.entries(devices)) {
+    const baselineDeviceCounter = Number.isFinite(state.last_device_counter)
+      ? state.last_device_counter
+      : null;
+    const baselineOffset = baselineDeviceCounter !== null
+      ? baselineDeviceCounter
+      : (Number.isFinite(state.device_offset) ? state.device_offset : 0);
+    const next = syncStateForCurrentShift(state, shift, shiftDate, today);
+    updateStateByDevice({
+      ...next,
       last_device_counter: baselineDeviceCounter,
       device_offset: baselineOffset,
       device_reset_pending: baselineDeviceCounter === null,
-      target_ticker_offset: 0,
-      target_ticker_reset_elapsed_seconds: null,
-    });
-    shiftStartCount = 0;
-  } else {
-    shiftStartCount = state.count;
+    }, deviceId);
   }
-
-  shiftStartTime = Date.now();
 }
 
 function handleShiftBoundary() {
@@ -86,16 +165,12 @@ function handleShiftBoundary() {
   if (!boundary.crossed) return false;
 
   lastBoundaryMin = boundary.boundaryMin;
-
-  const state = getState();
-  const baselineDeviceCounter = Number.isFinite(state.last_device_counter)
-    ? state.last_device_counter
-    : null;
-  const baselineOffset = baselineDeviceCounter !== null
-    ? baselineDeviceCounter
-    : (Number.isFinite(state.device_offset) ? state.device_offset : 0);
-  if (state.count > 0) {
-    saveShiftRecord(state.shift_date, state.shift, state.count);
+  const states = getAllDeviceStates();
+  for (const [deviceId, state] of Object.entries(states)) {
+    const count = Number(state.count) || 0;
+    if (count > 0 && state?.shift_date && state?.shift) {
+      saveShiftRecord(state.shift_date, state.shift, count, deviceId);
+    }
   }
 
   const now = new Date();
@@ -103,26 +178,32 @@ function handleShiftBoundary() {
   const shiftDate = getHistoryShiftDate(newShift, newShift.wib);
   const today = formatDateISO(newShift.wib);
 
-  updateState({
-    shift: newShift.name,
-    shift_date: shiftDate,
-    count: 0,
-    daily_total: state.daily_date === today ? state.daily_total + state.count : state.count,
-    daily_date: today,
-    last_device_counter: baselineDeviceCounter,
-    device_offset: baselineOffset,
-    device_reset_pending: baselineDeviceCounter === null,
-    target_ticker_offset: 0,
-    target_ticker_reset_elapsed_seconds: null,
-  });
-
-  shiftStartCount = 0;
-  shiftStartTime = Date.now();
+  for (const [deviceId, state] of Object.entries(states)) {
+    const baselineDeviceCounter = Number.isFinite(state.last_device_counter)
+      ? state.last_device_counter
+      : null;
+    const baselineOffset = baselineDeviceCounter !== null
+      ? baselineDeviceCounter
+      : (Number.isFinite(state.device_offset) ? state.device_offset : 0);
+    updateStateByDevice({
+      shift: newShift.name,
+      shift_date: shiftDate,
+      count: 0,
+      daily_total: state.daily_date === today ? state.daily_total + state.count : state.count,
+      daily_date: today,
+      last_device_counter: baselineDeviceCounter,
+      device_offset: baselineOffset,
+      device_reset_pending: baselineDeviceCounter === null,
+      target_ticker_offset: 0,
+      target_ticker_reset_elapsed_seconds: null,
+    }, deviceId);
+  }
   return true;
 }
 
-function incrementCounter(amount = 1) {
-  const state = getState();
+function incrementCounter(amount = 1, deviceId = 'device-1') {
+  const safeDeviceId = normalizeDeviceId(deviceId);
+  const state = getStateByDevice(safeDeviceId);
   const shift = getHistoryShift();
   const shiftDate = getHistoryShiftDate(shift, shift.wib);
   const today = formatDateISO(shift.wib);
@@ -135,13 +216,11 @@ function incrementCounter(amount = 1) {
 
   if (currentShift !== shift.name || currentShiftDate !== shiftDate) {
     if (count > 0) {
-      saveShiftRecord(currentShiftDate, currentShift, count);
+      saveShiftRecord(currentShiftDate, currentShift, count, safeDeviceId);
     }
     currentShift = shift.name;
     currentShiftDate = shiftDate;
     count = 0;
-    shiftStartCount = 0;
-    shiftStartTime = Date.now();
   }
 
   if (dailyDate !== today) {
@@ -152,20 +231,21 @@ function incrementCounter(amount = 1) {
   count += amount;
   dailyTotal += amount;
 
-  updateState({
+  updateStateByDevice({
     shift: currentShift,
     shift_date: currentShiftDate,
     count,
     daily_total: dailyTotal,
     daily_date: dailyDate,
     last_iot_seen: new Date().toISOString(),
-  });
+  }, safeDeviceId);
 
-  return getDashboardData();
+  return getDashboardData({ deviceId: safeDeviceId });
 }
 
-function applyDeviceCounter(deviceCounter, deviceTime) {
-  const state = getState();
+function applyDeviceCounter(deviceCounter, deviceTime, deviceId = 'device-1') {
+  const safeDeviceId = normalizeDeviceId(deviceId);
+  const state = getStateByDevice(safeDeviceId);
   const shift = getHistoryShift();
   const shiftDate = getHistoryShiftDate(shift, shift.wib);
   const today = formatDateISO(shift.wib);
@@ -178,13 +258,11 @@ function applyDeviceCounter(deviceCounter, deviceTime) {
 
   if (currentShift !== shift.name || currentShiftDate !== shiftDate) {
     if (count > 0) {
-      saveShiftRecord(currentShiftDate, currentShift, count);
+      saveShiftRecord(currentShiftDate, currentShift, count, safeDeviceId);
     }
     currentShift = shift.name;
     currentShiftDate = shiftDate;
     count = 0;
-    shiftStartCount = 0;
-    shiftStartTime = Date.now();
   }
 
   if (dailyDate !== today) {
@@ -226,7 +304,7 @@ function applyDeviceCounter(deviceCounter, deviceTime) {
   count = safeCounter;
   dailyTotal += delta;
 
-  updateState({
+  updateStateByDevice({
     shift: currentShift,
     shift_date: currentShiftDate,
     count,
@@ -237,20 +315,21 @@ function applyDeviceCounter(deviceCounter, deviceTime) {
     last_device_counter: nextDeviceCounter,
     device_offset: deviceOffset,
     device_reset_pending: false,
-  });
+  }, safeDeviceId);
 
-  return getDashboardData();
+  return getDashboardData({ deviceId: safeDeviceId });
 }
 
-function resetCounter() {
-  const state = getState();
+function resetCounter(deviceId = 'device-1') {
+  const safeDeviceId = normalizeDeviceId(deviceId);
+  const state = getStateByDevice(safeDeviceId);
   const shift = getHistoryShift();
   const shiftDate = getHistoryShiftDate(shift, shift.wib);
   const today = formatDateISO(shift.wib);
   const prevCount = state.count;
 
   if (prevCount > 0) {
-    saveShiftRecord(state.shift_date, state.shift, prevCount);
+    saveShiftRecord(state.shift_date, state.shift, prevCount, safeDeviceId);
   }
 
   let dailyTotal = state.daily_total;
@@ -270,10 +349,7 @@ function resetCounter() {
     ? currentDeviceCounter
     : Number.isFinite(state.device_offset) ? state.device_offset : 0;
 
-  shiftStartCount = 0;
-  shiftStartTime = Date.now();
-
-  updateState({
+  updateStateByDevice({
     shift: shift.name,
     shift_date: shiftDate,
     count: 0,
@@ -282,102 +358,90 @@ function resetCounter() {
     last_iot_seen: new Date().toISOString(),
     device_offset: nextOffset,
     device_reset_pending: currentDeviceCounter === null,
-  });
+  }, safeDeviceId);
 
-  return getDashboardData();
+  return getDashboardData({ deviceId: safeDeviceId });
 }
 
-function resetTargetTicker() {
-  const state = getState();
+function resetTargetTicker(deviceId = 'device-1') {
+  const safeDeviceId = normalizeDeviceId(deviceId);
+  const state = getStateByDevice(safeDeviceId);
   const target = getTarget();
   const shift = getCurrentShift();
   const progress = getShiftProgress(shift, shift.wib);
   const rawTargetTicker = calcRawTargetTicker(target, shift, progress);
   const elapsedSeconds = Math.floor(progress.elapsedMinutes * 60);
 
-  updateState({
+  updateStateByDevice({
     target_ticker_offset: rawTargetTicker,
     target_ticker_reset_elapsed_seconds: elapsedSeconds,
-  });
+  }, safeDeviceId);
 
-  return getDashboardData();
+  return getDashboardData({ deviceId: safeDeviceId });
 }
 
-function updateIotSeen() {
-  updateState({ last_iot_seen: new Date().toISOString() });
+function updateIotSeen(deviceId = 'device-1') {
+  const safeDeviceId = normalizeDeviceId(deviceId);
+  updateStateByDevice({ last_iot_seen: new Date().toISOString() }, safeDeviceId);
 }
 
-function getIotStatus() {
-  const state = getState();
-  if (!state.last_iot_seen) {
-    return { online: false, lastSeen: null, lastSeenText: 'Belum pernah terhubung' };
-  }
-
-  const lastSeen = new Date(state.last_iot_seen);
-  const diffMs = Date.now() - lastSeen.getTime();
-  const online = diffMs < 30000;
-
-  let lastSeenText;
-  if (diffMs < 60000) {
-    lastSeenText = 'Baru saja';
-  } else if (diffMs < 3600000) {
-    lastSeenText = `${Math.floor(diffMs / 60000)}m lalu`;
-  } else if (diffMs < 86400000) {
-    lastSeenText = `${Math.floor(diffMs / 3600000)}j lalu`;
-  } else {
-    lastSeenText = `${Math.floor(diffMs / 86400000)}d lalu`;
-  }
-
-  return { online, lastSeen: state.last_iot_seen, lastSeenText };
-}
-
-function getDashboardData() {
-  const state = getState();
+function getDashboardData(options = {}) {
+  const devicesState = getAllDeviceStates();
+  const selectedDeviceId = getResolvedSelectedDeviceId(options.deviceId, devicesState);
+  lastSelectedDeviceId = selectedDeviceId;
+  const selectedState = devicesState[selectedDeviceId] || getStateByDevice(selectedDeviceId);
   const target = getTarget();
   const shift = getCurrentShift();
   const shiftDate = getShiftDate(shift, shift.wib);
   const nextShift = getNextShift(shift);
   const progress = getShiftProgress(shift, shift.wib);
-  const iot = getIotStatus();
+  const progressForTicker = { ...progress, shiftDurationHours: shift.durationHours };
 
   const targetPerShift = calcTargetPerShift(target.target_per_hour, shift.durationHours);
   const elapsedHours = progress.elapsedMinutes / 60;
-  const currentRate = elapsedHours > 0.01 ? Math.round(state.count / elapsedHours) : 0;
+  const currentRate = elapsedHours > 0.01 ? Math.round((selectedState.count || 0) / elapsedHours) : 0;
   const projection = elapsedHours > 0.01
-    ? Math.round((state.count / elapsedHours) * shift.durationHours)
+    ? Math.round(((selectedState.count || 0) / elapsedHours) * shift.durationHours)
     : 0;
 
-  const expectedByNow = Math.round(targetPerShift * progress.fraction);
-  const elapsedSeconds = Math.floor(progress.elapsedMinutes * 60);
-  const totalSeconds = Math.floor(progress.totalMinutes * 60);
-  const shiftWindowClosed = elapsedSeconds >= totalSeconds;
-  const targetTickerOffset = Number.isFinite(state.target_ticker_offset)
-    ? state.target_ticker_offset
-    : 0;
-  const targetTickerResetElapsedSeconds = Number.isFinite(state.target_ticker_reset_elapsed_seconds)
-    ? Math.max(0, Math.floor(state.target_ticker_reset_elapsed_seconds))
-    : null;
-  const rawTargetByInterval = shiftWindowClosed ? 0 : calcRawTargetTicker(target, shift, progress);
-  const remainingTargetAfterReset = Math.max(0, targetPerShift - targetTickerOffset);
-  let targetByInterval;
-  if (shiftWindowClosed) {
-    targetByInterval = 0;
-  } else if (targetTickerResetElapsedSeconds !== null) {
-    const elapsedSinceReset = Math.max(0, elapsedSeconds - targetTickerResetElapsedSeconds);
-    const intervalCountSinceReset = target.interval_seconds > 0
-      ? Math.floor(elapsedSinceReset / target.interval_seconds)
-      : 0;
-    targetByInterval = Math.min(intervalCountSinceReset * target.pcs_per_interval, remainingTargetAfterReset);
-  } else {
-    targetByInterval = Math.max(0, rawTargetByInterval - targetTickerOffset);
-  }
-  const behind = expectedByNow - state.count;
+  const expectedByNow = Math.round(targetPerShift * progressForTicker.fraction);
+  const targetTicker = calcTargetTickerByState(selectedState, target, progressForTicker);
+  const behind = expectedByNow - (selectedState.count || 0);
   const progressPercent = targetPerShift > 0
-    ? Math.min(100, Math.round((state.count / targetPerShift) * 100))
+    ? Math.min(100, Math.round(((selectedState.count || 0) / targetPerShift) * 100))
     : 0;
 
   const today = formatDateISO(shift.wib);
-  const dailyTotal = state.daily_date === today ? state.daily_total : state.count;
+  const deviceRows = Object.keys(devicesState)
+    .sort()
+    .map((deviceId) => {
+      const state = devicesState[deviceId];
+      const iot = buildIotStatus(state.last_iot_seen);
+      const targetTickerByDevice = calcTargetTickerByState(state, target, progressForTicker);
+      const count = Number(state.count) || 0;
+      const dailyTotal = state.daily_date === today ? (Number(state.daily_total) || 0) : count;
+      return {
+        id: deviceId,
+        count,
+        dailyTotal,
+        iot,
+        sensor: { lastDeviceTime: state.last_device_time || null },
+        targetTicker: targetTickerByDevice,
+      };
+    });
+
+  const aggregateCounter = deviceRows.reduce((sum, row) => sum + row.count, 0);
+  const aggregateDailyTotal = deviceRows.reduce((sum, row) => sum + row.dailyTotal, 0);
+  const onlineDevices = deviceRows.filter((row) => row.iot.online).length;
+  const latestSeen = deviceRows
+    .map((row) => row.iot.lastSeen)
+    .filter(Boolean)
+    .sort()
+    .pop();
+  const aggregateIot = buildIotStatus(latestSeen || null);
+  const selectedDailyTotal = selectedState.daily_date === today
+    ? (Number(selectedState.daily_total) || 0)
+    : (Number(selectedState.count) || 0);
 
   return {
     time: formatTimeWIB(),
@@ -393,11 +457,21 @@ function getDashboardData() {
       name: nextShift.name,
       startTime: `${padTime(nextShift.startHour, nextShift.startMin)} WIB`,
     },
-    counter: state.count,
-    dailyTotal,
-    iot,
+    selectedDeviceId,
+    counter: selectedState.count || 0,
+    dailyTotal: aggregateDailyTotal,
+    selectedDailyTotal,
+    aggregateCounter,
+    iot: aggregateIot,
+    devices: deviceRows,
+    totals: {
+      counter: aggregateCounter,
+      dailyTotal: aggregateDailyTotal,
+      onlineDevices,
+      totalDevices: deviceRows.length,
+    },
     sensor: {
-      lastDeviceTime: state.last_device_time || null,
+      lastDeviceTime: selectedState.last_device_time || null,
     },
     target: {
       perHour: target.target_per_hour,
@@ -408,13 +482,10 @@ function getDashboardData() {
       rateLabel: `${target.pcs_per_interval} pcs / ${target.interval_seconds} detik`,
     },
     progress: {
-      elapsedSeconds,
-      totalSeconds,
+      elapsedSeconds: Math.floor(progressForTicker.elapsedMinutes * 60),
+      totalSeconds: Math.floor(progressForTicker.totalMinutes * 60),
     },
-    targetTicker: {
-      value: targetByInterval,
-      max: shiftWindowClosed ? 0 : remainingTargetAfterReset,
-    },
+    targetTicker,
     analytics: {
       currentRate,
       projection,
@@ -424,7 +495,7 @@ function getDashboardData() {
       progressPercent,
       isBehind: behind > 0,
     },
-    updatedAt: state.updated_at,
+    updatedAt: selectedState.updated_at,
   };
 }
 
@@ -437,4 +508,5 @@ module.exports = {
   resetTargetTicker,
   updateIotSeen,
   getDashboardData,
+  getDeviceIds,
 };

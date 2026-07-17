@@ -84,6 +84,20 @@ function shiftBadgeClass(shift) {
   return 'shift-badge shift-badge--3';
 }
 
+function renderDeviceFilterOptions(devices = []) {
+  const select = document.getElementById('deviceFilter');
+  if (!select) return;
+  const current = select.value || 'all';
+  const list = Array.isArray(devices) ? devices : [];
+  select.innerHTML = [
+    '<option value="all">Semua Device</option>',
+    ...list.map((deviceId) => `<option value="${esc(deviceId)}">${esc(deviceId)}</option>`),
+  ].join('');
+
+  const stillExists = current === 'all' || list.includes(current);
+  select.value = stillExists ? current : 'all';
+}
+
 function renderSummary(summary) {
   const pct = summary.overallAchievement || 0;
   document.getElementById('sumRecords').textContent = fmtNumber(summary.totalRecords);
@@ -125,6 +139,7 @@ function renderRows(rows) {
         <tr>
           <td>${esc(formatTanggalLabel(r.tanggal))}</td>
           <td><span class="${shiftBadgeClass(r.shift)}">${esc(r.shift)}</span></td>
+          <td>${esc(r.device_id || 'legacy')}</td>
           <td class="total-cell">${fmtNumber(r.total_barang)} pcs</td>
           <td class="target-cell">${fmtNumber(r.target_per_hour)} pcs/jam</td>
           <td class="target-cell">${fmtNumber(r.target_per_shift)} pcs</td>
@@ -151,18 +166,22 @@ async function loadHistory() {
   const start = document.getElementById('startDate').value;
   const end = document.getElementById('endDate').value;
   const shift = document.getElementById('shiftFilter').value;
+  const device = document.getElementById('deviceFilter').value;
   const search = document.getElementById('searchInput').value.trim();
 
   const params = new URLSearchParams({
     start,
     end,
     shift,
+    device,
     search,
   });
 
   const data = await fetchJson(`/api/history?${params.toString()}`);
+  renderDeviceFilterOptions(data.devices || []);
   renderSummary(data.summary || {});
   renderRows(data.rows || []);
+  return data;
 }
 
 function exportCsv() {
@@ -174,6 +193,7 @@ function exportCsv() {
   const headers = [
     'Tanggal',
     'Shift',
+    'Device',
     'Total Barang',
     'Target Per Jam',
     'Target Per Shift',
@@ -184,6 +204,7 @@ function exportCsv() {
   const lines = currentRows.map((r) => [
     r.tanggal,
     r.shift,
+    r.device_id || 'legacy',
     r.total_barang,
     r.target_per_hour,
     r.target_per_shift,
@@ -228,6 +249,9 @@ async function init() {
 
   document.getElementById('searchInput').addEventListener('keydown', (e) => {
     if (e.key === 'Enter') loadHistory().catch((err) => alert(err.message));
+  });
+  document.getElementById('deviceFilter').addEventListener('change', () => {
+    loadHistory().catch((e) => alert(e.message));
   });
 
   document.getElementById('btnExport').addEventListener('click', exportCsv);

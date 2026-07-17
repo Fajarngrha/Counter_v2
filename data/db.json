@@ -890,18 +890,18 @@
   ],
   "current_state": {
     "shift": "Shift 1",
-    "shift_date": "2026-07-14",
+    "shift_date": "2026-07-17",
     "count": 0,
     "daily_total": 0,
-    "daily_date": "2026-07-14",
+    "daily_date": "2026-07-17",
     "last_iot_seen": "2026-07-07T08:48:57.343Z",
-    "updated_at": "2026-07-14T06:54:32.195Z",
     "last_device_time": "2026-07-07 15:48:56",
     "last_device_counter": 81,
     "device_offset": 81,
-    "target_ticker_offset": 0,
     "device_reset_pending": false,
-    "target_ticker_reset_elapsed_seconds": null
+    "target_ticker_offset": 0,
+    "target_ticker_reset_elapsed_seconds": null,
+    "updated_at": "2026-07-17T03:53:19.989Z"
   },
   "production_target": {
     "target_per_hour": 10,
@@ -912,5 +912,23 @@
   "_meta": {
     "last_history_id": 71,
     "demo_seeded": true
-  }
+  },
+  "devices": {
+    "device-1": {
+      "shift": "Shift 1",
+      "shift_date": "2026-07-17",
+      "count": 0,
+      "daily_total": 0,
+      "daily_date": "2026-07-17",
+      "last_iot_seen": "2026-07-07T08:48:57.343Z",
+      "last_device_time": "2026-07-07 15:48:56",
+      "last_device_counter": 81,
+      "device_offset": 81,
+      "device_reset_pending": false,
+      "target_ticker_offset": 0,
+      "target_ticker_reset_elapsed_seconds": null,
+      "updated_at": "2026-07-17T03:53:19.989Z"
+    }
+  },
+  "selected_device_id": "device-1"
 }
