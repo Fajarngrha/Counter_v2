@@ -83,6 +83,24 @@
       </div>
     </section>
 
+    <section class="fleet-row">
+      <div class="card fleet-card">
+        <div class="fleet-header">
+          <div class="card-label">Monitoring Device</div>
+          <div class="fleet-actions">
+            <button id="btnAddDevice" class="btn btn-ghost btn-sm" type="button">+ Tambah Device</button>
+          </div>
+          <div class="fleet-kpis">
+            <div class="fleet-kpi"><span class="k">Online</span><span id="fleetOnlineDevices" class="v">0</span></div>
+            <div class="fleet-kpi"><span class="k">Total Device</span><span id="fleetTotalDevices" class="v">0</span></div>
+            <div class="fleet-kpi"><span class="k">Counter Total</span><span id="fleetAggregateCounter" class="v">0</span></div>
+            <div class="fleet-kpi"><span class="k">Terpilih</span><span id="fleetSelectedDevice" class="v">-</span></div>
+          </div>
+        </div>
+        <div id="deviceGrid" class="device-grid device-grid--dashboard"></div>
+      </div>
+    </section>
+
     <section class="main-row">
       <!-- Kolom kiri: Counter + Total Hari Ini -->
       <div class="main-col-left">
@@ -108,11 +126,6 @@
               <div id="counterTargetMax" class="counter-target-max">dari 0 pcs shift</div> -->
             </div>
           </div>
-        </div>
-
-        <div class="card">
-          <div class="card-label">Perangkat IoT (Trial Multi-Device)</div>
-          <div id="deviceGrid" class="device-grid"></div>
         </div>
 
         <div class="card daily-card">
@@ -224,6 +237,31 @@
       <div class="modal-actions">
         <button id="btnCancelTargetPassword" class="btn btn-ghost" type="button">Batal</button>
         <button id="btnConfirmTargetPassword" class="btn btn-success" type="button">Simpan</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="targetPerDeviceModal" class="modal-overlay hidden">
+    <div class="modal">
+      <h3>Edit Target Device</h3>
+      <div class="status-sub">Device: <span id="lblTargetDevice">-</span></div>
+      <div class="form-group">
+        <label for="inpModalModelTarget">Model</label>
+        <input id="inpModalModelTarget" type="text" placeholder="Contoh: Yamaha">
+      </div>
+      <div class="target-rate-inputs">
+        <div class="rate-field">
+          <label for="inpModalPcsPerInterval">PCS</label>
+          <input id="inpModalPcsPerInterval" type="number" min="1" step="1">
+        </div>
+        <div class="rate-field">
+          <label for="inpModalIntervalSeconds">DETIK</label>
+          <input id="inpModalIntervalSeconds" type="number" min="1" step="1">
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button id="btnCancelPerDeviceTarget" class="btn btn-ghost" type="button">Batal</button>
+        <button id="btnSavePerDeviceTarget" class="btn btn-success" type="button">Simpan</button>
       </div>
     </div>
   </div>

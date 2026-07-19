@@ -90,6 +90,12 @@ const DEMO_HISTORY = [
 ];
 
 const DEFAULT_DEVICE_ID = 'device-1';
+const DEFAULT_TARGET = {
+  target_per_hour: 1800,
+  model: '-',
+  pcs_per_interval: 5,
+  interval_seconds: 10,
+};
 
 function nowIso() {
   return new Date().toISOString();
@@ -163,6 +169,18 @@ function normalizeDeviceState(state = {}) {
   };
 }
 
+function normalizeDeviceLabel(label, deviceId) {
+  const text = String(label || '').trim();
+  if (text.length > 0) return text.slice(0, 60);
+  return `Mesin ${deviceId}`;
+}
+
+function normalizeDeviceMeta(meta = {}, deviceId) {
+  return {
+    label: normalizeDeviceLabel(meta.label, deviceId),
+  };
+}
+
 function migrateLegacyStateToDevices(data) {
   if (!data.devices || typeof data.devices !== 'object') {
     data.devices = {};
@@ -190,6 +208,56 @@ function migrateLegacyStateToDevices(data) {
   data.current_state = normalizeDeviceState(data.devices[data.selected_device_id]);
 }
 
+function migrateDeviceMeta(data) {
+  if (!data.device_meta || typeof data.device_meta !== 'object') {
+    data.device_meta = {};
+  }
+
+  const normalized = {};
+  for (const deviceId of Object.keys(data.devices || {})) {
+    normalized[deviceId] = normalizeDeviceMeta(data.device_meta[deviceId], deviceId);
+  }
+  data.device_meta = normalized;
+}
+
+function normalizeTarget(target = {}) {
+  const targetPerHour = Number(target.target_per_hour);
+  const pcsPerInterval = Number(target.pcs_per_interval);
+  const intervalSeconds = Number(target.interval_seconds);
+  return {
+    target_per_hour: Number.isFinite(targetPerHour) && targetPerHour > 0
+      ? Math.floor(targetPerHour)
+      : DEFAULT_TARGET.target_per_hour,
+    model: (typeof target.model === 'string' && target.model.trim().length > 0)
+      ? target.model.trim()
+      : DEFAULT_TARGET.model,
+    pcs_per_interval: Number.isFinite(pcsPerInterval) && pcsPerInterval > 0
+      ? Math.floor(pcsPerInterval)
+      : DEFAULT_TARGET.pcs_per_interval,
+    interval_seconds: Number.isFinite(intervalSeconds) && intervalSeconds > 0
+      ? Math.floor(intervalSeconds)
+      : DEFAULT_TARGET.interval_seconds,
+  };
+}
+
+function migrateLegacyTargets(data) {
+  const legacyTarget = normalizeTarget(data.production_target || DEFAULT_TARGET);
+  if (!data.production_targets || typeof data.production_targets !== 'object') {
+    data.production_targets = {};
+  }
+
+  const deviceIds = Object.keys(data.devices || {});
+  if (deviceIds.length === 0) {
+    data.production_targets[DEFAULT_DEVICE_ID] = normalizeTarget(data.production_targets[DEFAULT_DEVICE_ID] || legacyTarget);
+  } else {
+    for (const deviceId of deviceIds) {
+      data.production_targets[deviceId] = normalizeTarget(data.production_targets[deviceId] || legacyTarget);
+    }
+  }
+
+  data.production_target = legacyTarget;
+}
+
 function readDb() {
   if (!fs.existsSync(dbPath)) {
     const today = new Date().toISOString().slice(0, 10);
@@ -200,11 +268,9 @@ function readDb() {
         [DEFAULT_DEVICE_ID]: createDefaultCurrentState(today),
       },
       selected_device_id: DEFAULT_DEVICE_ID,
-      production_target: {
-        target_per_hour: 1800,
-        model: '-',
-        pcs_per_interval: 5,
-        interval_seconds: 10,
+      production_target: { ...DEFAULT_TARGET },
+      production_targets: {
+        [DEFAULT_DEVICE_ID]: { ...DEFAULT_TARGET },
       },
       _meta: { last_history_id: 0, demo_seeded: false },
     };
@@ -220,19 +286,16 @@ function readDb() {
   if (!data._meta.demo_seeded) mutated = true;
   if (!data.shift_history) data.shift_history = [];
   migrateLegacyStateToDevices(data);
+  migrateDeviceMeta(data);
   if (!data.production_target) {
-    data.production_target = {
-      target_per_hour: 1800,
-      model: '-',
-      pcs_per_interval: 5,
-      interval_seconds: 10,
-    };
+    data.production_target = { ...DEFAULT_TARGET };
     mutated = true;
   }
   if (!data.production_target.model) {
-    data.production_target.model = '-';
+    data.production_target.model = DEFAULT_TARGET.model;
     mutated = true;
   }
+  migrateLegacyTargets(data);
 
   if (!data._meta.demo_seeded && data.shift_history.length === 0) {
     seedDemoHistory(data);
@@ -413,19 +476,103 @@ function getDeviceIds() {
   return Object.keys(getAllDeviceStates());
 }
 
-function getTarget() {
+function ensureDeviceState(deviceId) {
   const data = readDb();
-  return data.production_target;
+  const safeDeviceId = String(deviceId || '').trim();
+  if (!safeDeviceId) {
+    throw new Error('deviceId wajib diisi.');
+  }
+
+  if (!data.devices[safeDeviceId]) {
+    const base = data.current_state ? normalizeDeviceState(data.current_state) : normalizeDeviceState();
+    data.devices[safeDeviceId] = {
+      ...base,
+      count: 0,
+      daily_total: 0,
+      last_iot_seen: null,
+      last_device_time: null,
+      last_device_counter: null,
+      device_offset: 0,
+      device_reset_pending: false,
+      target_ticker_offset: 0,
+      target_ticker_reset_elapsed_seconds: null,
+      updated_at: nowIso(),
+    };
+    const legacyTarget = normalizeTarget(data.production_target || DEFAULT_TARGET);
+    data.production_targets[safeDeviceId] = normalizeTarget(data.production_targets?.[safeDeviceId] || legacyTarget);
+    if (!data.device_meta || typeof data.device_meta !== 'object') data.device_meta = {};
+    data.device_meta[safeDeviceId] = normalizeDeviceMeta(data.device_meta[safeDeviceId], safeDeviceId);
+    writeDb(data);
+  }
+
+  return normalizeDeviceState(data.devices[safeDeviceId]);
 }
 
-function updateTarget(targetPerHour, pcsPerInterval, intervalSeconds, model = '-') {
+function getDeviceMeta(deviceId = DEFAULT_DEVICE_ID) {
   const data = readDb();
-  data.production_target = {
+  const safeDeviceId = String(deviceId || '').trim() || DEFAULT_DEVICE_ID;
+  return normalizeDeviceMeta(data.device_meta?.[safeDeviceId], safeDeviceId);
+}
+
+function getAllDeviceMeta() {
+  const data = readDb();
+  const out = {};
+  for (const deviceId of Object.keys(data.devices || {})) {
+    out[deviceId] = normalizeDeviceMeta(data.device_meta?.[deviceId], deviceId);
+  }
+  return out;
+}
+
+function updateDeviceMeta(deviceId, fields = {}) {
+  const data = readDb();
+  const safeDeviceId = String(deviceId || '').trim();
+  if (!safeDeviceId) throw new Error('deviceId wajib diisi.');
+  if (!data.devices[safeDeviceId]) throw new Error('deviceId tidak ditemukan.');
+  if (!data.device_meta || typeof data.device_meta !== 'object') data.device_meta = {};
+
+  data.device_meta[safeDeviceId] = normalizeDeviceMeta({
+    ...data.device_meta[safeDeviceId],
+    ...fields,
+  }, safeDeviceId);
+  writeDb(data);
+  return data.device_meta[safeDeviceId];
+}
+
+function getTarget() {
+  return getTargetByDevice(DEFAULT_DEVICE_ID);
+}
+
+function getTargetByDevice(deviceId = DEFAULT_DEVICE_ID) {
+  const data = readDb();
+  const safeDeviceId = String(deviceId || '').trim() || DEFAULT_DEVICE_ID;
+  const target = data.production_targets?.[safeDeviceId];
+  const fallback = normalizeTarget(data.production_target || DEFAULT_TARGET);
+  return normalizeTarget(target || fallback);
+}
+
+function getAllTargets() {
+  const data = readDb();
+  const out = {};
+  for (const deviceId of Object.keys(data.devices || {})) {
+    out[deviceId] = getTargetByDevice(deviceId);
+  }
+  return out;
+}
+
+function updateTarget(targetPerHour, pcsPerInterval, intervalSeconds, model = '-', deviceId = DEFAULT_DEVICE_ID) {
+  const data = readDb();
+  const safeDeviceId = String(deviceId || '').trim() || DEFAULT_DEVICE_ID;
+  const next = normalizeTarget({
     target_per_hour: targetPerHour,
     model: model || '-',
     pcs_per_interval: pcsPerInterval,
     interval_seconds: intervalSeconds,
-  };
+  });
+  if (!data.production_targets || typeof data.production_targets !== 'object') {
+    data.production_targets = {};
+  }
+  data.production_targets[safeDeviceId] = next;
+  data.production_target = next;
   writeDb(data);
 }
 
@@ -438,7 +585,13 @@ module.exports = {
   updateStateByDevice,
   getAllDeviceStates,
   getDeviceIds,
+  ensureDeviceState,
+  getDeviceMeta,
+  getAllDeviceMeta,
+  updateDeviceMeta,
   getTarget,
+  getTargetByDevice,
+  getAllTargets,
   updateTarget,
   buildTargetSnapshot,
 };

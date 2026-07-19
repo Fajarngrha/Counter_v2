@@ -59,12 +59,25 @@ const counterTargetValueEl = el('counterTargetValue');
 const progressFillEl = el('progressFill');
 const projectionWrapEl = el('projectionWrap');
 const deviceGridEl = el('deviceGrid');
+const fleetOnlineDevicesEl = el('fleetOnlineDevices');
+const fleetTotalDevicesEl = el('fleetTotalDevices');
+const fleetAggregateCounterEl = el('fleetAggregateCounter');
+const fleetSelectedDeviceEl = el('fleetSelectedDevice');
+const btnAddDeviceEl = el('btnAddDevice');
+const targetPerDeviceModalEl = el('targetPerDeviceModal');
+const lblTargetDeviceEl = el('lblTargetDevice');
+const inpModalModelTargetEl = el('inpModalModelTarget');
+const inpModalPcsPerIntervalEl = el('inpModalPcsPerInterval');
+const inpModalIntervalSecondsEl = el('inpModalIntervalSeconds');
+const btnSavePerDeviceTargetEl = el('btnSavePerDeviceTarget');
+const btnCancelPerDeviceTargetEl = el('btnCancelPerDeviceTarget');
 
 let lastCounter = null;
 let lastTargetTickerValue = null;
 let latestDashboardData = null;
 let targetTickerState = null;
 let selectedDeviceId = null;
+let editingTargetDeviceId = null;
 
 function loadTargetFromStorage() {
   try {
@@ -426,6 +439,11 @@ function render(data) {
   el('nextShiftName').textContent = data.nextShift?.name || '-';
   el('nextShiftStart').textContent = data.nextShift?.startTime || '-';
 
+  if (fleetOnlineDevicesEl) fleetOnlineDevicesEl.textContent = fmtNumber(onlineDevices);
+  if (fleetTotalDevicesEl) fleetTotalDevicesEl.textContent = fmtNumber(totalDevices);
+  if (fleetAggregateCounterEl) fleetAggregateCounterEl.textContent = fmtNumber(data.aggregateCounter || data.totals?.counter || 0);
+  if (fleetSelectedDeviceEl) fleetSelectedDeviceEl.textContent = selectedDeviceId || '-';
+
   renderDeviceCards(data.devices || [], selectedDeviceId);
 
   syncTargetTickerState(data);
@@ -442,14 +460,27 @@ function renderDeviceCards(devices, activeDeviceId) {
     const isActive = device.id === activeDeviceId;
     const statusClass = device.iot?.online ? 'status-online' : 'status-offline';
     const statusText = device.iot?.online ? 'Online' : 'Offline';
+    const machineTitle = device.label || `Mesin ${device.id}`;
     return `
       <button class="device-item ${isActive ? 'device-item--active' : ''}" type="button" data-device-id="${device.id}">
         <div class="device-item-top">
-          <span class="device-id">${device.id}</span>
-          <span class="${statusClass}" style="font-size:0.75rem;">${statusText}</span>
+          <span class="device-id">${machineTitle}</span>
+          <span class="device-status-badge ${statusClass}">${statusText}</span>
         </div>
         <div class="device-count">${fmtNumber(device.count)}</div>
-        <div class="device-meta">Daily: ${fmtNumber(device.dailyTotal)}</div>
+        <div class="device-meta">ID: ${device.id} | Daily: ${fmtNumber(device.dailyTotal)} | Model: ${device.target?.model || '-'} | Target/Jam: ${fmtNumber(device.target?.perHour || 0)}</div>
+        <div class="device-panel">
+          <div class="device-target">
+            <div class="label">Target Produksi</div>
+            <div class="value">${fmtNumber(device.targetTicker?.value || 0)} / ${fmtNumber(device.targetTicker?.max || 0)} pcs</div>
+          </div>
+          <div class="device-actions">
+            <button class="btn btn-danger btn-sm js-device-reset" type="button" data-device-id="${device.id}">Reset</button>
+            <button class="btn btn-ghost btn-sm js-device-reset-target" type="button" data-device-id="${device.id}">Reset Target</button>
+            <button class="btn btn-ghost btn-sm js-device-rename" type="button" data-device-id="${device.id}" data-device-label="${machineTitle}">Ubah Nama</button>
+            <button class="btn btn-ghost btn-sm js-device-edit-target" type="button" data-device-id="${device.id}">Edit Target</button>
+          </div>
+        </div>
       </button>
     `;
   }).join('');
@@ -467,11 +498,96 @@ function renderDeviceCards(devices, activeDeviceId) {
       }
     });
   });
+
+  deviceGridEl.querySelectorAll('.js-device-reset').forEach((btn) => {
+    btn.addEventListener('click', async (ev) => {
+      ev.stopPropagation();
+      const deviceId = btn.getAttribute('data-device-id');
+      if (!deviceId) return;
+      if (!confirm(`Reset counter device ${deviceId} ke 0?`)) return;
+      try {
+        const data = await postJson('/api/counter/reset', { deviceId });
+        selectedDeviceId = deviceId;
+        render(data);
+      } catch (err) {
+        alert(err.message || 'Gagal reset counter');
+      }
+    });
+  });
+
+  deviceGridEl.querySelectorAll('.js-device-reset-target').forEach((btn) => {
+    btn.addEventListener('click', async (ev) => {
+      ev.stopPropagation();
+      const deviceId = btn.getAttribute('data-device-id');
+      if (!deviceId) return;
+      if (!confirm(`Reset target saat ini device ${deviceId} ke 0?`)) return;
+      try {
+        const data = await postJson('/api/target-ticker/reset', { deviceId });
+        selectedDeviceId = deviceId;
+        render(data);
+      } catch (err) {
+        alert(err.message || 'Gagal reset target');
+      }
+    });
+  });
+
+  deviceGridEl.querySelectorAll('.js-device-edit-target').forEach((btn) => {
+    btn.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      const deviceId = btn.getAttribute('data-device-id');
+      if (!deviceId) return;
+      openPerDeviceTargetModal(deviceId);
+    });
+  });
+
+  deviceGridEl.querySelectorAll('.js-device-rename').forEach((btn) => {
+    btn.addEventListener('click', async (ev) => {
+      ev.stopPropagation();
+      const deviceId = btn.getAttribute('data-device-id');
+      const currentLabel = btn.getAttribute('data-device-label') || `Mesin ${deviceId}`;
+      if (!deviceId) return;
+      const label = (window.prompt(`Ubah nama device ${deviceId}:`, currentLabel) || '').trim();
+      if (!label) return;
+      try {
+        const res = await putJson(`/api/devices/${encodeURIComponent(deviceId)}`, { label });
+        selectedDeviceId = deviceId;
+        render(res.dashboard || await refreshDashboard(deviceId));
+      } catch (err) {
+        alert(err.message || 'Gagal update nama device');
+      }
+    });
+  });
 }
 
-async function syncTargetToServer(model, pcsPerInterval, intervalSeconds, editPassword) {
+function openPerDeviceTargetModal(deviceId) {
+  editingTargetDeviceId = deviceId;
+  if (lblTargetDeviceEl) lblTargetDeviceEl.textContent = deviceId;
+
+  const target = (latestDashboardData?.devices || []).find((d) => d.id === deviceId)?.target || latestDashboardData?.target || {};
+  if (inpModalModelTargetEl) inpModalModelTargetEl.value = target.model || '-';
+  if (inpModalPcsPerIntervalEl) inpModalPcsPerIntervalEl.value = target.pcsPerInterval || 1;
+  if (inpModalIntervalSecondsEl) inpModalIntervalSecondsEl.value = target.intervalSeconds || 1;
+
+  targetPerDeviceModalEl?.classList.remove('hidden');
+  targetPerDeviceModalEl?.classList.add('show');
+}
+
+function closePerDeviceTargetModal() {
+  editingTargetDeviceId = null;
+  targetPerDeviceModalEl?.classList.remove('show');
+  targetPerDeviceModalEl?.classList.add('hidden');
+}
+
+async function syncTargetToServer(model, pcsPerInterval, intervalSeconds, editPassword, deviceId) {
   const targetPerHour = calcPerHour(pcsPerInterval, intervalSeconds);
-  await putJson('/api/target', { model, targetPerHour, pcsPerInterval, intervalSeconds, editPassword });
+  await putJson('/api/target', {
+    model,
+    targetPerHour,
+    pcsPerInterval,
+    intervalSeconds,
+    editPassword,
+    deviceId,
+  });
 }
 
 async function initTargetConfig() {
@@ -481,7 +597,8 @@ async function initTargetConfig() {
     el('inpPcsPerInterval').value = stored.pcsPerInterval;
     el('inpIntervalSeconds').value = stored.intervalSeconds;
   } else {
-    const target = await fetchJson('/api/target');
+    const query = selectedDeviceId ? `?deviceId=${encodeURIComponent(selectedDeviceId)}` : '';
+    const target = await fetchJson(`/api/target${query}`);
     el('inpModelTarget').value = target.model || '-';
     el('inpPcsPerInterval').value = target.pcs_per_interval;
     el('inpIntervalSeconds').value = target.interval_seconds;
@@ -497,10 +614,9 @@ async function init() {
     return;
   }
 
-  await initTargetConfig();
-
   const initial = await refreshDashboard();
   render(initial);
+  await initTargetConfig();
 
   if (typeof io === 'function') {
     const socket = io();
@@ -523,6 +639,53 @@ async function init() {
   el('btnLogout').addEventListener('click', async () => {
     await postJson('/api/logout', {});
     window.location.href = '/';
+  });
+
+  btnAddDeviceEl?.addEventListener('click', async () => {
+    const deviceId = (window.prompt('Masukkan deviceId baru (contoh: device-esp32-03):') || '').trim();
+    if (!deviceId) return;
+    const label = (window.prompt(`Nama tampilan untuk ${deviceId}:`, `Mesin ${deviceId}`) || '').trim();
+    try {
+      const res = await postJson('/api/devices', { deviceId, label });
+      selectedDeviceId = res.deviceId || deviceId;
+      render(res.dashboard || await refreshDashboard(selectedDeviceId));
+    } catch (err) {
+      alert(err.message || 'Gagal menambah device');
+    }
+  });
+
+  btnCancelPerDeviceTargetEl?.addEventListener('click', closePerDeviceTargetModal);
+  targetPerDeviceModalEl?.addEventListener('click', (ev) => {
+    if (ev.target === targetPerDeviceModalEl) closePerDeviceTargetModal();
+  });
+
+  btnSavePerDeviceTargetEl?.addEventListener('click', async () => {
+    if (!editingTargetDeviceId) return;
+    try {
+      const model = normalizeModel(inpModalModelTargetEl?.value) || '-';
+      const pcsPerInterval = parseInt(inpModalPcsPerIntervalEl?.value, 10);
+      const intervalSeconds = parseInt(inpModalIntervalSecondsEl?.value, 10);
+      if (!pcsPerInterval || pcsPerInterval < 1 || !intervalSeconds || intervalSeconds < 1) {
+        alert('PCS dan DETIK harus angka positif.');
+        return;
+      }
+
+      const editPassword = await requestTargetPassword({
+        title: `Validasi Simpan Target (${editingTargetDeviceId})`,
+        label: 'Password',
+        placeholder: 'Masukkan password untuk simpan target',
+      });
+      if (!editPassword) return;
+
+      await syncTargetToServer(model, pcsPerInterval, intervalSeconds, editPassword, editingTargetDeviceId);
+      await postJson('/api/target-ticker/reset', { deviceId: editingTargetDeviceId });
+      const latest = await refreshDashboard(editingTargetDeviceId);
+      selectedDeviceId = editingTargetDeviceId;
+      closePerDeviceTargetModal();
+      render(latest);
+    } catch (err) {
+      alert(err.message || 'Gagal simpan target');
+    }
   });
 
   el('btnResetCounter').addEventListener('click', async () => {
@@ -664,9 +827,9 @@ async function init() {
       }
 
       saveTargetToStorage(model, pcsPerInterval, intervalSeconds);
-      await syncTargetToServer(model, pcsPerInterval, intervalSeconds, editPassword);
+      await syncTargetToServer(model, pcsPerInterval, intervalSeconds, editPassword, selectedDeviceId);
       // Rebase hitungan "Target Saat Ini" ke target baru agar naik normal dari 0.
-      await postJson('/api/target-ticker/reset', {});
+      await postJson('/api/target-ticker/reset', { deviceId: selectedDeviceId });
 
       setEditMode(false);
 

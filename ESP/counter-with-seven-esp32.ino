@@ -21,7 +21,7 @@ const char* mqtt_user = nullptr;
 const char* mqtt_pass = nullptr;
 #endif
 
-const char* deviceId = "device-esp32-01";
+const char* deviceId = "device-esp32-02";
 const char* mqtt_topic_base = "iot/counter";
 String mqtt_topic = "";
 String mqtt_topic_command = "";
@@ -34,10 +34,12 @@ const int pinBtnResetCounter = 25;
 const int pinBtnResetTarget = 26;
 const int rtcSdaPin = 21;
 const int rtcSclPin = 22;
-const int sevenSegClkPin = 4;
-const int sevenSegDioPin = 5;
+const int sevenSegClkPin = 18;
+const int sevenSegDioPin = 19;
 const int pinLedPower = 32;   // LED merah (power): ON terus setelah boot
 const int pinLedWifi = 33;    // LED hijau: ON saat WiFi tersambung
+const bool ledPowerActiveLow = false; // true jika LED dipasang ke 3V3 (sink ke GPIO)
+const bool ledWifiActiveLow = false;  // true jika LED dipasang ke 3V3 (sink ke GPIO)
 
 RTC_DS3231 rtc;
 TM1637Display display(sevenSegClkPin, sevenSegDioPin);
@@ -96,6 +98,19 @@ String lastShiftName = "";
 unsigned long syncedTargetTickerValue = 0;
 unsigned long syncedTargetTickerAtMs = 0;
 const unsigned long syncedTargetTickerTtlMs = 6000;
+
+void setPowerLed(bool on) {
+  digitalWrite(pinLedPower, (on ^ ledPowerActiveLow) ? HIGH : LOW);
+}
+
+void setWifiLed(bool on) {
+  digitalWrite(pinLedWifi, (on ^ ledWifiActiveLow) ? HIGH : LOW);
+}
+
+// Forward declaration supaya aman terhadap auto-prototype Arduino IDE.
+struct ShiftInfo;
+ShiftInfo getShiftInfo(const DateTime& now);
+unsigned long calcTargetSaatIni(const ShiftInfo& shift);
 
 String getRtcTimestamp();
 void applyTargetConfig(const String& message);
@@ -194,7 +209,7 @@ bool setup_wifi(unsigned long timeoutMs) {
   delay(10);
   Serial.print("Menghubungkan ke WiFi: ");
   Serial.println(ssid);
-  digitalWrite(pinLedWifi, LOW);
+  setWifiLed(false);
 
   WiFi.mode(WIFI_STA);
   WiFi.begin(ssid, password);
@@ -215,13 +230,13 @@ bool setup_wifi(unsigned long timeoutMs) {
     Serial.println("\nWiFi Terhubung!");
     Serial.print("IP ESP32: ");
     Serial.println(WiFi.localIP());
-    digitalWrite(pinLedWifi, HIGH);
+    setWifiLed(true);
     showSevenSegStatus(4444);
     return true;
   }
 
   Serial.println("\nWiFi gagal tersambung dalam batas waktu. Sistem tetap lanjut tanpa WiFi.");
-  digitalWrite(pinLedWifi, LOW);
+  setWifiLed(false);
   showSevenSegStatus(4040);
   delay(1000);
   return false;
@@ -774,10 +789,16 @@ void setup() {
   Serial.println(mqtt_topic);
   Serial.print("Topic command: ");
   Serial.println(mqtt_topic_command);
+  Serial.println("Pin mapping aktif:");
+  Serial.print("  RELAY GPIO"); Serial.println(pinRelay);
+  Serial.print("  TM1637 CLK GPIO"); Serial.println(sevenSegClkPin);
+  Serial.print("  TM1637 DIO GPIO"); Serial.println(sevenSegDioPin);
+  Serial.print("  LED POWER GPIO"); Serial.println(pinLedPower);
+  Serial.print("  LED WIFI GPIO"); Serial.println(pinLedWifi);
   pinMode(pinLedPower, OUTPUT);
   pinMode(pinLedWifi, OUTPUT);
-  digitalWrite(pinLedPower, HIGH);
-  digitalWrite(pinLedWifi, LOW);
+  setPowerLed(true);
+  setWifiLed(false);
 
   // ============================================================
   // TEST TM1637 PALING AWAL
@@ -824,8 +845,8 @@ void setup() {
 
   // ============================================================
   // Input counter dan tombol
-  // Catatan: pinRelay sekarang GPIO10 supaya GPIO5 bebas untuk TM1637 DIO.
-  // Pindahkan kabel sensor/counter dari GPIO5 ke GPIO10.
+  // Catatan: relay/counter input memakai pinRelay (saat ini GPIO27).
+  // TM1637 tetap di GPIO4 (CLK) dan GPIO5 (DIO).
   // ============================================================
   pinMode(pinRelay, INPUT_PULLUP);
   attachInterrupt(digitalPinToInterrupt(pinRelay), hitungBarang, FALLING);
@@ -862,7 +883,7 @@ void loop() {
   handleSerialRtcCalibration();
   processCounterInput();
   handleButtons();
-  digitalWrite(pinLedWifi, WiFi.status() == WL_CONNECTED ? HIGH : LOW);
+  setWifiLed(WiFi.status() == WL_CONNECTED);
 
   // Coba konek ulang WiFi secara ringan jika sebelumnya gagal/terputus.
   static unsigned long lastWifiReconnectAttempt = 0;

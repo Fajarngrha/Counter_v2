@@ -3,8 +3,9 @@ const {
   updateStateByDevice,
   getAllDeviceStates,
   getDeviceIds,
+  getAllDeviceMeta,
   saveShiftHistory,
-  getTarget,
+  getTargetByDevice,
   buildTargetSnapshot,
 } = require('../db/database');
 const {
@@ -40,7 +41,7 @@ function calcRawTargetTicker(target, shift, progress) {
 }
 
 function saveShiftRecord(tanggal, shift, totalBarang, deviceId = 'device-1') {
-  const target = buildTargetSnapshot(getTarget(), shift);
+  const target = buildTargetSnapshot(getTargetByDevice(deviceId), shift);
   saveShiftHistory(tanggal, shift, totalBarang, target, deviceId);
 }
 
@@ -366,7 +367,7 @@ function resetCounter(deviceId = 'device-1') {
 function resetTargetTicker(deviceId = 'device-1') {
   const safeDeviceId = normalizeDeviceId(deviceId);
   const state = getStateByDevice(safeDeviceId);
-  const target = getTarget();
+  const target = getTargetByDevice(safeDeviceId);
   const shift = getCurrentShift();
   const progress = getShiftProgress(shift, shift.wib);
   const rawTargetTicker = calcRawTargetTicker(target, shift, progress);
@@ -387,10 +388,11 @@ function updateIotSeen(deviceId = 'device-1') {
 
 function getDashboardData(options = {}) {
   const devicesState = getAllDeviceStates();
+  const deviceMeta = getAllDeviceMeta();
   const selectedDeviceId = getResolvedSelectedDeviceId(options.deviceId, devicesState);
   lastSelectedDeviceId = selectedDeviceId;
   const selectedState = devicesState[selectedDeviceId] || getStateByDevice(selectedDeviceId);
-  const target = getTarget();
+  const target = getTargetByDevice(selectedDeviceId);
   const shift = getCurrentShift();
   const shiftDate = getShiftDate(shift, shift.wib);
   const nextShift = getNextShift(shift);
@@ -416,17 +418,27 @@ function getDashboardData(options = {}) {
     .sort()
     .map((deviceId) => {
       const state = devicesState[deviceId];
+      const targetByDevice = getTargetByDevice(deviceId);
       const iot = buildIotStatus(state.last_iot_seen);
-      const targetTickerByDevice = calcTargetTickerByState(state, target, progressForTicker);
+      const targetTickerByDevice = calcTargetTickerByState(state, targetByDevice, progressForTicker);
       const count = Number(state.count) || 0;
       const dailyTotal = state.daily_date === today ? (Number(state.daily_total) || 0) : count;
+      const targetPerShiftByDevice = calcTargetPerShift(targetByDevice.target_per_hour, shift.durationHours);
       return {
         id: deviceId,
+        label: deviceMeta?.[deviceId]?.label || `Mesin ${deviceId}`,
         count,
         dailyTotal,
         iot,
         sensor: { lastDeviceTime: state.last_device_time || null },
         targetTicker: targetTickerByDevice,
+        target: {
+          model: targetByDevice.model || '-',
+          perHour: targetByDevice.target_per_hour,
+          perShift: targetPerShiftByDevice,
+          pcsPerInterval: targetByDevice.pcs_per_interval,
+          intervalSeconds: targetByDevice.interval_seconds,
+        },
       };
     });
 

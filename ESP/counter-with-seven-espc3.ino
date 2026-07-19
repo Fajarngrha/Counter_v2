@@ -97,6 +97,11 @@ unsigned long syncedTargetTickerValue = 0;
 unsigned long syncedTargetTickerAtMs = 0;
 const unsigned long syncedTargetTickerTtlMs = 6000;
 
+// Forward declaration supaya aman terhadap auto-prototype Arduino IDE.
+struct ShiftInfo;
+ShiftInfo getShiftInfo(const DateTime& now);
+unsigned long calcTargetSaatIni(const ShiftInfo& shift);
+
 String getRtcTimestamp();
 void applyTargetConfig(const String& message);
 void resetTargetTickerOffset();

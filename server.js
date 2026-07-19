@@ -20,7 +20,15 @@ const {
   publishTargetTickerReset,
   publishTargetTickerValue,
 } = require('./services/mqttService');
-const { getHistory, getTarget, updateTarget, getState } = require('./db/database');
+const {
+  getHistory,
+  getTargetByDevice,
+  updateTarget,
+  getState,
+  ensureDeviceState,
+  getAllDeviceMeta,
+  updateDeviceMeta,
+} = require('./db/database');
 
 const app = express();
 const server = http.createServer(app);
@@ -87,11 +95,56 @@ app.get('/api/history', requireAuth, (req, res) => {
 });
 
 app.get('/api/target', requireAuth, (req, res) => {
-  res.json(getTarget());
+  const deviceId = typeof req.query.deviceId === 'string' ? req.query.deviceId : undefined;
+  res.json(getTargetByDevice(deviceId));
 });
 
 app.get('/api/shifts', requireAuth, (req, res) => {
   res.json({ shifts: getShiftConfig() });
+});
+
+app.get('/api/devices', requireAuth, (req, res) => {
+  const ids = getDeviceIds();
+  const meta = getAllDeviceMeta();
+  res.json({
+    devices: ids.map((id) => ({ id, label: meta?.[id]?.label || `Mesin ${id}` })),
+  });
+});
+
+app.post('/api/devices', requireAuth, (req, res) => {
+  const rawId = String(req.body?.deviceId || '').trim();
+  const rawLabel = String(req.body?.label || '').trim();
+  if (!rawId) {
+    return res.status(400).json({ error: 'deviceId wajib diisi' });
+  }
+  if (!/^[a-zA-Z0-9_-]{3,40}$/.test(rawId)) {
+    return res.status(400).json({ error: 'Format deviceId tidak valid (3-40, huruf/angka/_/-).' });
+  }
+
+  ensureDeviceState(rawId);
+  if (rawLabel) {
+    updateDeviceMeta(rawId, { label: rawLabel });
+  }
+  const dashboard = getDashboardData({ deviceId: rawId });
+  broadcastDashboard(dashboard);
+  return res.json({ success: true, deviceId: rawId, dashboard });
+});
+
+app.put('/api/devices/:id', requireAuth, (req, res) => {
+  const deviceId = String(req.params.id || '').trim();
+  const label = String(req.body?.label || '').trim();
+  if (!deviceId) return res.status(400).json({ error: 'deviceId tidak valid' });
+  if (!label) return res.status(400).json({ error: 'Label wajib diisi' });
+  if (label.length > 60) return res.status(400).json({ error: 'Maksimal 60 karakter' });
+
+  try {
+    const updated = updateDeviceMeta(deviceId, { label });
+    const dashboard = getDashboardData({ deviceId });
+    broadcastDashboard(dashboard);
+    return res.json({ success: true, deviceId, meta: updated, dashboard });
+  } catch (err) {
+    return res.status(400).json({ error: err.message || 'Gagal update label device' });
+  }
 });
 
 app.post('/api/counter/reset', requireAuth, (req, res) => {
@@ -118,7 +171,15 @@ app.post('/api/target-ticker/reset', requireAuth, (req, res) => {
 });
 
 app.put('/api/target', requireAuth, (req, res) => {
-  const { targetPerHour, pcsPerInterval, intervalSeconds, model, editPassword } = req.body;
+  const {
+    targetPerHour,
+    pcsPerInterval,
+    intervalSeconds,
+    model,
+    editPassword,
+    deviceId,
+  } = req.body;
+  const safeDeviceId = String(deviceId || '').trim() || getDashboardData().selectedDeviceId || 'device-1';
   if (!editPassword || editPassword !== config.auth.password) {
     return res.status(403).json({ error: 'Password validasi salah' });
   }
@@ -130,14 +191,12 @@ app.put('/api/target', requireAuth, (req, res) => {
     parseInt(targetPerHour, 10),
     parseInt(pcsPerInterval, 10) || 5,
     parseInt(intervalSeconds, 10) || 10,
-    safeModel
+    safeModel,
+    safeDeviceId
   );
-  const target = getTarget();
-  const deviceIds = getDeviceIds();
-  deviceIds.forEach((deviceId) => {
-    publishTargetConfig(target, { targetTickerOffset: getState(deviceId).target_ticker_offset, deviceId });
-    publishTargetTickerValue(getDashboardData({ deviceId })?.targetTicker?.value ?? 0, { deviceId });
-  });
+  const target = getTargetByDevice(safeDeviceId);
+  publishTargetConfig(target, { targetTickerOffset: getState(safeDeviceId).target_ticker_offset, deviceId: safeDeviceId });
+  publishTargetTickerValue(getDashboardData({ deviceId: safeDeviceId })?.targetTicker?.value ?? 0, { deviceId: safeDeviceId });
   res.json(target);
 });
 
@@ -184,7 +243,7 @@ io.on('connection', (socket) => {
 initCounter();
 initMqtt(broadcastDashboard);
 getDeviceIds().forEach((deviceId) => {
-  publishTargetConfig(getTarget(), { targetTickerOffset: getState(deviceId).target_ticker_offset, deviceId });
+  publishTargetConfig(getTargetByDevice(deviceId), { targetTickerOffset: getState(deviceId).target_ticker_offset, deviceId });
 });
 
 setInterval(() => {
