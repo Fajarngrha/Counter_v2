@@ -886,49 +886,104 @@
       "interval_seconds": 349,
       "shift_duration_hours": 8.583333333333334,
       "timestamp_saved": "2026-07-07T08:50:00.205Z"
+    },
+    {
+      "id": 72,
+      "tanggal": "2026-07-19",
+      "shift": "Shift 1",
+      "device_id": "device-1",
+      "total_barang": 326,
+      "target_per_hour": 10,
+      "target_per_shift": 86,
+      "model": "Yamaha",
+      "pcs_per_interval": 1,
+      "interval_seconds": 349,
+      "shift_duration_hours": 8.583333333333334,
+      "timestamp_saved": "2026-07-19T08:43:01.506Z"
     }
   ],
   "current_state": {
-    "shift": "Shift 1",
+    "shift": "Shift 2",
     "shift_date": "2026-07-19",
     "count": 0,
     "daily_total": 0,
     "daily_date": "2026-07-19",
-    "last_iot_seen": "2026-07-07T08:48:57.343Z",
-    "last_device_time": "2026-07-07 15:48:56",
-    "last_device_counter": 81,
-    "device_offset": 81,
+    "last_iot_seen": "2026-07-19T10:04:41.980Z",
+    "last_device_time": "2026-07-19 17:04:41",
+    "last_device_counter": 0,
+    "device_offset": 0,
     "device_reset_pending": false,
-    "target_ticker_offset": 0,
-    "target_ticker_reset_elapsed_seconds": null,
-    "updated_at": "2026-07-19T04:32:54.974Z"
+    "target_ticker_offset": 7,
+    "target_ticker_reset_elapsed_seconds": 2984,
+    "updated_at": "2026-07-19T10:04:44.242Z"
   },
   "production_target": {
-    "target_per_hour": 10,
+    "target_per_hour": 9,
     "model": "Yamaha",
     "pcs_per_interval": 1,
-    "interval_seconds": 349
+    "interval_seconds": 400
   },
   "_meta": {
-    "last_history_id": 71,
+    "last_history_id": 72,
     "demo_seeded": true
   },
   "devices": {
-    "device-1": {
-      "shift": "Shift 1",
+    "ZnDC-02": {
+      "shift": "Shift 2",
       "shift_date": "2026-07-19",
       "count": 0,
       "daily_total": 0,
       "daily_date": "2026-07-19",
-      "last_iot_seen": "2026-07-07T08:48:57.343Z",
-      "last_device_time": "2026-07-07 15:48:56",
-      "last_device_counter": 81,
-      "device_offset": 81,
-      "device_reset_pending": false,
+      "last_iot_seen": null,
+      "last_device_time": null,
+      "last_device_counter": null,
+      "device_offset": 0,
+      "device_reset_pending": true,
       "target_ticker_offset": 0,
       "target_ticker_reset_elapsed_seconds": null,
-      "updated_at": "2026-07-19T04:32:54.974Z"
+      "updated_at": "2026-07-19T09:20:46.274Z"
+    },
+    "device-zndc-01": {
+      "shift": "Shift 2",
+      "shift_date": "2026-07-19",
+      "count": 0,
+      "daily_total": 0,
+      "daily_date": "2026-07-19",
+      "last_iot_seen": "2026-07-19T10:04:41.980Z",
+      "last_device_time": "2026-07-19 17:04:41",
+      "last_device_counter": 0,
+      "device_offset": 0,
+      "device_reset_pending": false,
+      "target_ticker_offset": 7,
+      "target_ticker_reset_elapsed_seconds": 2984,
+      "updated_at": "2026-07-19T10:04:44.242Z"
     }
   },
-  "selected_device_id": "device-1"
+  "selected_device_id": "device-zndc-01",
+  "device_meta": {
+    "ZnDC-02": {
+      "label": "Mesin ZnDC-02",
+      "address": null,
+      "last_topic": null
+    },
+    "device-zndc-01": {
+      "label": "ZnDC-01",
+      "address": "172.20.10.2",
+      "last_topic": "iot/counter/device-zndc-01/increment"
+    }
+  },
+  "production_targets": {
+    "ZnDC-02": {
+      "target_per_hour": 9,
+      "model": "Yamaha",
+      "pcs_per_interval": 1,
+      "interval_seconds": 400
+    },
+    "device-zndc-01": {
+      "target_per_hour": 9,
+      "model": "Yamaha",
+      "pcs_per_interval": 1,
+      "interval_seconds": 400
+    }
+  }
 }

@@ -427,6 +427,8 @@ function getDashboardData(options = {}) {
       return {
         id: deviceId,
         label: deviceMeta?.[deviceId]?.label || `Mesin ${deviceId}`,
+        address: deviceMeta?.[deviceId]?.address || null,
+        lastTopic: deviceMeta?.[deviceId]?.last_topic || null,
         count,
         dailyTotal,
         iot,

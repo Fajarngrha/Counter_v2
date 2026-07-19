@@ -28,6 +28,7 @@ const {
   ensureDeviceState,
   getAllDeviceMeta,
   updateDeviceMeta,
+  deleteDevice,
 } = require('./db/database');
 
 const app = express();
@@ -50,6 +51,53 @@ app.use(
 );
 
 app.use(express.static(path.join(__dirname, 'public')));
+
+function slugifyDeviceId(text = '') {
+  return String(text || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .replace(/-{2,}/g, '-');
+}
+
+function generateDeviceIdFromLabel(label, existingIds = []) {
+  const MAX_LEN = 40;
+  const base = slugifyDeviceId(label) || 'device';
+  let prefix = base.startsWith('device-') ? base : `device-${base}`;
+  prefix = prefix.slice(0, MAX_LEN).replace(/-+$/g, '');
+
+  const known = new Set((existingIds || []).map((id) => String(id || '').trim().toLowerCase()));
+  if (!known.has(prefix.toLowerCase())) return prefix;
+
+  let seq = 2;
+  while (true) {
+    const suffix = `-${seq}`;
+    const maxPrefixLen = MAX_LEN - suffix.length;
+    const pref = prefix.slice(0, maxPrefixLen).replace(/-+$/g, '') || 'device';
+    const candidate = `${pref}${suffix}`;
+    if (!known.has(candidate.toLowerCase())) return candidate;
+    seq += 1;
+  }
+}
+
+function normalizeLabelKey(label = '') {
+  return String(label || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ');
+}
+
+function hasDuplicateMachineLabel(label, excludeDeviceId = null) {
+  const candidateKey = normalizeLabelKey(label);
+  if (!candidateKey) return false;
+  const meta = getAllDeviceMeta();
+  const safeExclude = String(excludeDeviceId || '').trim();
+
+  return Object.entries(meta || {}).some(([deviceId, info]) => {
+    if (safeExclude && deviceId === safeExclude) return false;
+    return normalizeLabelKey(info?.label) === candidateKey;
+  });
+}
 
 function requireAuth(req, res, next) {
   if (req.session && req.session.authenticated) return next();
@@ -107,13 +155,24 @@ app.get('/api/devices', requireAuth, (req, res) => {
   const ids = getDeviceIds();
   const meta = getAllDeviceMeta();
   res.json({
-    devices: ids.map((id) => ({ id, label: meta?.[id]?.label || `Mesin ${id}` })),
+    devices: ids.map((id) => ({
+      id,
+      label: meta?.[id]?.label || `Mesin ${id}`,
+      address: meta?.[id]?.address || null,
+      lastTopic: meta?.[id]?.last_topic || null,
+    })),
   });
 });
 
 app.post('/api/devices', requireAuth, (req, res) => {
-  const rawId = String(req.body?.deviceId || '').trim();
   const rawLabel = String(req.body?.label || '').trim();
+  let rawId = String(req.body?.deviceId || '').trim();
+  if (rawLabel && hasDuplicateMachineLabel(rawLabel)) {
+    return res.status(400).json({ error: 'Nama mesin sudah digunakan. Gunakan nama lain.' });
+  }
+  if (!rawId) {
+    rawId = generateDeviceIdFromLabel(rawLabel, getDeviceIds());
+  }
   if (!rawId) {
     return res.status(400).json({ error: 'deviceId wajib diisi' });
   }
@@ -136,6 +195,9 @@ app.put('/api/devices/:id', requireAuth, (req, res) => {
   if (!deviceId) return res.status(400).json({ error: 'deviceId tidak valid' });
   if (!label) return res.status(400).json({ error: 'Label wajib diisi' });
   if (label.length > 60) return res.status(400).json({ error: 'Maksimal 60 karakter' });
+  if (hasDuplicateMachineLabel(label, deviceId)) {
+    return res.status(400).json({ error: 'Nama mesin sudah digunakan. Gunakan nama lain.' });
+  }
 
   try {
     const updated = updateDeviceMeta(deviceId, { label });
@@ -144,6 +206,20 @@ app.put('/api/devices/:id', requireAuth, (req, res) => {
     return res.json({ success: true, deviceId, meta: updated, dashboard });
   } catch (err) {
     return res.status(400).json({ error: err.message || 'Gagal update label device' });
+  }
+});
+
+app.delete('/api/devices/:id', requireAuth, (req, res) => {
+  const deviceId = String(req.params.id || '').trim();
+  if (!deviceId) return res.status(400).json({ error: 'deviceId tidak valid' });
+
+  try {
+    const result = deleteDevice(deviceId);
+    const dashboard = getDashboardData({ deviceId: result.selectedDeviceId });
+    broadcastDashboard(dashboard);
+    return res.json({ success: true, ...result, dashboard });
+  } catch (err) {
+    return res.status(400).json({ error: err.message || 'Gagal menghapus device' });
   }
 });
 

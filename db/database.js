@@ -175,9 +175,17 @@ function normalizeDeviceLabel(label, deviceId) {
   return `Mesin ${deviceId}`;
 }
 
+function normalizeDeviceAddress(value) {
+  const text = String(value || '').trim();
+  if (!text) return null;
+  return text.slice(0, 120);
+}
+
 function normalizeDeviceMeta(meta = {}, deviceId) {
   return {
     label: normalizeDeviceLabel(meta.label, deviceId),
+    address: normalizeDeviceAddress(meta.address),
+    last_topic: normalizeDeviceAddress(meta.last_topic),
   };
 }
 
@@ -538,6 +546,38 @@ function updateDeviceMeta(deviceId, fields = {}) {
   return data.device_meta[safeDeviceId];
 }
 
+function deleteDevice(deviceId) {
+  const data = readDb();
+  const safeDeviceId = String(deviceId || '').trim();
+  if (!safeDeviceId) throw new Error('deviceId wajib diisi.');
+  if (!data.devices[safeDeviceId]) throw new Error('deviceId tidak ditemukan.');
+
+  const deviceIds = Object.keys(data.devices || {});
+  if (deviceIds.length <= 1) {
+    throw new Error('Minimal harus ada 1 device aktif.');
+  }
+
+  delete data.devices[safeDeviceId];
+  if (data.production_targets && typeof data.production_targets === 'object') {
+    delete data.production_targets[safeDeviceId];
+  }
+  if (data.device_meta && typeof data.device_meta === 'object') {
+    delete data.device_meta[safeDeviceId];
+  }
+
+  const remaining = Object.keys(data.devices || {});
+  if (!remaining.length) {
+    throw new Error('Gagal menghapus device terakhir.');
+  }
+
+  if (!data.selected_device_id || !data.devices[data.selected_device_id]) {
+    data.selected_device_id = remaining[0];
+  }
+  data.current_state = normalizeDeviceState(data.devices[data.selected_device_id]);
+  writeDb(data);
+  return { deleted: safeDeviceId, selectedDeviceId: data.selected_device_id };
+}
+
 function getTarget() {
   return getTargetByDevice(DEFAULT_DEVICE_ID);
 }
@@ -589,6 +629,7 @@ module.exports = {
   getDeviceMeta,
   getAllDeviceMeta,
   updateDeviceMeta,
+  deleteDevice,
   getTarget,
   getTargetByDevice,
   getAllTargets,

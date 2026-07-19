@@ -40,6 +40,12 @@ async function putJson(url, body) {
   });
 }
 
+async function deleteJson(url) {
+  return fetchJson(url, {
+    method: 'DELETE',
+  });
+}
+
 async function saveShiftConfig(shifts, editPassword) {
   const payload = { shifts, editPassword };
   try {
@@ -71,6 +77,22 @@ const inpModalPcsPerIntervalEl = el('inpModalPcsPerInterval');
 const inpModalIntervalSecondsEl = el('inpModalIntervalSeconds');
 const btnSavePerDeviceTargetEl = el('btnSavePerDeviceTarget');
 const btnCancelPerDeviceTargetEl = el('btnCancelPerDeviceTarget');
+const addDeviceModalEl = el('addDeviceModal');
+const inpAddDeviceMachineNameEl = el('inpAddDeviceMachineName');
+const btnCancelAddDeviceEl = el('btnCancelAddDevice');
+const btnSaveAddDeviceEl = el('btnSaveAddDevice');
+const addDeviceHintEl = el('addDeviceHint');
+const deviceIdResultModalEl = el('deviceIdResultModal');
+const inpResultDeviceIdEl = el('inpResultDeviceId');
+const resultDeviceHintEl = el('resultDeviceHint');
+const btnCloseDeviceIdResultEl = el('btnCloseDeviceIdResult');
+const btnCopyDeviceIdResultEl = el('btnCopyDeviceIdResult');
+const renameDeviceModalEl = el('renameDeviceModal');
+const lblRenameDeviceIdEl = el('lblRenameDeviceId');
+const inpRenameDeviceLabelEl = el('inpRenameDeviceLabel');
+const renameDeviceHintEl = el('renameDeviceHint');
+const btnCancelRenameDeviceEl = el('btnCancelRenameDevice');
+const btnSaveRenameDeviceEl = el('btnSaveRenameDevice');
 
 let lastCounter = null;
 let lastTargetTickerValue = null;
@@ -78,6 +100,49 @@ let latestDashboardData = null;
 let targetTickerState = null;
 let selectedDeviceId = null;
 let editingTargetDeviceId = null;
+let deviceMenuOutsideListenerBound = false;
+let deviceGridHandlersBound = false;
+let openedDeviceMenuId = null;
+let renamingDeviceId = null;
+
+function showToast(message, variant = 'info') {
+  const text = String(message || '').trim();
+  if (!text) return;
+
+  let container = document.getElementById('toastContainer');
+  if (!container) {
+    container = document.createElement('div');
+    container.id = 'toastContainer';
+    container.className = 'toast-container';
+    document.body.appendChild(container);
+  }
+
+  const toast = document.createElement('div');
+  toast.className = `toast toast--${variant}`;
+  toast.textContent = text;
+  container.appendChild(toast);
+
+  requestAnimationFrame(() => toast.classList.add('show'));
+
+  const close = () => {
+    toast.classList.remove('show');
+    setTimeout(() => {
+      if (toast.parentNode) toast.parentNode.removeChild(toast);
+      if (container && container.childElementCount === 0) {
+        container.remove();
+      }
+    }, 180);
+  };
+
+  setTimeout(close, 2200);
+}
+
+function closeAllDeviceMenus() {
+  openedDeviceMenuId = null;
+  if (!deviceGridEl) return;
+  deviceGridEl.querySelectorAll('.device-menu').forEach((m) => m.classList.remove('is-open'));
+  deviceGridEl.querySelectorAll('.js-device-menu-toggle').forEach((b) => b.setAttribute('aria-expanded', 'false'));
+}
 
 function loadTargetFromStorage() {
   try {
@@ -89,6 +154,33 @@ function loadTargetFromStorage() {
   } catch {
     return null;
   }
+}
+
+function showAddDeviceModal(show) {
+  if (!addDeviceModalEl) return;
+  addDeviceModalEl.classList.toggle('hidden', !show);
+  addDeviceModalEl.classList.toggle('show', show);
+  if (show) {
+    if (addDeviceHintEl) addDeviceHintEl.textContent = 'Isi nama mesin lalu klik Simpan.';
+    setTimeout(() => inpAddDeviceMachineNameEl?.focus(), 0);
+  }
+}
+
+function showDeviceIdResultModal(show) {
+  if (!deviceIdResultModalEl) return;
+  deviceIdResultModalEl.classList.toggle('hidden', !show);
+  deviceIdResultModalEl.classList.toggle('show', show);
+}
+
+function showRenameDeviceModal(show) {
+  if (!renameDeviceModalEl) return;
+  renameDeviceModalEl.classList.toggle('hidden', !show);
+  renameDeviceModalEl.classList.toggle('show', show);
+  if (!show) {
+    renamingDeviceId = null;
+    return;
+  }
+  setTimeout(() => inpRenameDeviceLabelEl?.focus(), 0);
 }
 
 function saveTargetToStorage(model, pcsPerInterval, intervalSeconds) {
@@ -458,105 +550,156 @@ function renderDeviceCards(devices, activeDeviceId) {
 
   deviceGridEl.innerHTML = devices.map((device) => {
     const isActive = device.id === activeDeviceId;
+    const isMenuOpen = openedDeviceMenuId === device.id;
     const statusClass = device.iot?.online ? 'status-online' : 'status-offline';
     const statusText = device.iot?.online ? 'Online' : 'Offline';
     const machineTitle = device.label || `Mesin ${device.id}`;
     return `
-      <button class="device-item ${isActive ? 'device-item--active' : ''}" type="button" data-device-id="${device.id}">
+      <div class="device-item ${isActive ? 'device-item--active' : ''}" data-device-id="${device.id}" role="button" tabindex="0">
         <div class="device-item-top">
           <span class="device-id">${machineTitle}</span>
-          <span class="device-status-badge ${statusClass}">${statusText}</span>
+          <div class="device-top-right">
+            <span class="device-status-badge ${statusClass}">${statusText}</span>
+            <div class="device-menu-wrap">
+              <button
+                class="btn-icon btn-icon--small js-device-menu-toggle"
+                type="button"
+                title="Aksi device"
+                aria-label="Aksi device ${device.id}"
+                aria-expanded="${isMenuOpen ? 'true' : 'false'}"
+              >&#8942;</button>
+              <div class="device-menu ${isMenuOpen ? 'is-open' : ''}" data-device-menu="${device.id}">
+                <button class="btn btn-ghost btn-sm js-device-action-copy-id" type="button" data-device-id="${device.id}">Copy Device ID</button>
+                <button class="btn btn-ghost btn-sm js-device-action-rename" type="button" data-device-id="${device.id}" data-device-label="${machineTitle}">Ubah Nama</button>
+                <button class="btn btn-danger btn-sm js-device-action-delete" type="button" data-device-id="${device.id}" data-device-label="${machineTitle}">Hapus</button>
+              </div>
+            </div>
+          </div>
         </div>
         <div class="device-count">${fmtNumber(device.count)}</div>
-        <div class="device-meta">ID: ${device.id} | Daily: ${fmtNumber(device.dailyTotal)} | Model: ${device.target?.model || '-'} | Target/Jam: ${fmtNumber(device.target?.perHour || 0)}</div>
-        <div class="device-panel">
-          <div class="device-target">
-            <div class="label">Target Produksi</div>
-            <div class="value">${fmtNumber(device.targetTicker?.value || 0)} / ${fmtNumber(device.targetTicker?.max || 0)} pcs</div>
-          </div>
-          <div class="device-actions">
-            <button class="btn btn-danger btn-sm js-device-reset" type="button" data-device-id="${device.id}">Reset</button>
-            <button class="btn btn-ghost btn-sm js-device-reset-target" type="button" data-device-id="${device.id}">Reset Target</button>
-            <button class="btn btn-ghost btn-sm js-device-rename" type="button" data-device-id="${device.id}" data-device-label="${machineTitle}">Ubah Nama</button>
-            <button class="btn btn-ghost btn-sm js-device-edit-target" type="button" data-device-id="${device.id}">Edit Target</button>
-          </div>
+        <div class="device-meta">
+          <span>Target Saat Ini: ${fmtNumber(device.targetTicker?.value || 0)}</span>
         </div>
-      </button>
+      </div>
     `;
   }).join('');
 
-  deviceGridEl.querySelectorAll('[data-device-id]').forEach((btn) => {
-    btn.addEventListener('click', async () => {
-      const nextDeviceId = btn.getAttribute('data-device-id');
+  if (!deviceGridHandlersBound) {
+    deviceGridEl.addEventListener('click', async (ev) => {
+      const toggleBtn = ev.target.closest('.js-device-menu-toggle');
+      if (toggleBtn) {
+        ev.stopPropagation();
+        const card = toggleBtn.closest('.device-item[data-device-id]');
+        const deviceId = card?.getAttribute('data-device-id');
+        if (!deviceId) return;
+        const isOpening = openedDeviceMenuId !== deviceId;
+        closeAllDeviceMenus();
+        if (isOpening) {
+          openedDeviceMenuId = deviceId;
+          const wrap = toggleBtn.closest('.device-menu-wrap');
+          const menu = wrap?.querySelector('.device-menu');
+          if (menu) menu.classList.add('is-open');
+          toggleBtn.setAttribute('aria-expanded', 'true');
+        }
+        return;
+      }
+
+      const renameBtn = ev.target.closest('.js-device-action-rename');
+      if (renameBtn) {
+        ev.stopPropagation();
+        const deviceId = renameBtn.getAttribute('data-device-id');
+        const currentLabel = renameBtn.getAttribute('data-device-label') || `Mesin ${deviceId}`;
+        if (!deviceId) return;
+        renamingDeviceId = deviceId;
+        if (lblRenameDeviceIdEl) lblRenameDeviceIdEl.textContent = deviceId;
+        if (inpRenameDeviceLabelEl) inpRenameDeviceLabelEl.value = currentLabel;
+        if (renameDeviceHintEl) renameDeviceHintEl.textContent = 'Masukkan nama mesin lalu klik Simpan.';
+        closeAllDeviceMenus();
+        showRenameDeviceModal(true);
+        return;
+      }
+
+      const copyIdBtn = ev.target.closest('.js-device-action-copy-id');
+      if (copyIdBtn) {
+        ev.stopPropagation();
+        const deviceId = copyIdBtn.getAttribute('data-device-id');
+        if (!deviceId) return;
+        try {
+          if (navigator?.clipboard?.writeText) {
+            await navigator.clipboard.writeText(deviceId);
+          } else {
+            const tmp = document.createElement('input');
+            tmp.value = deviceId;
+            document.body.appendChild(tmp);
+            tmp.select();
+            document.execCommand('copy');
+            document.body.removeChild(tmp);
+          }
+          closeAllDeviceMenus();
+          showToast(`Device ID copied: ${deviceId}`, 'success');
+        } catch {
+          showToast('Gagal copy Device ID', 'error');
+        }
+        return;
+      }
+
+      const deleteBtn = ev.target.closest('.js-device-action-delete');
+      if (deleteBtn) {
+        ev.stopPropagation();
+        const deviceId = deleteBtn.getAttribute('data-device-id');
+        const deviceLabel = deleteBtn.getAttribute('data-device-label') || deviceId;
+        if (!deviceId) return;
+        const ok = window.confirm(`Hapus device "${deviceLabel}" (${deviceId})?\nData state device akan dihapus dari dashboard.`);
+        if (!ok) return;
+        try {
+          const res = await deleteJson(`/api/devices/${encodeURIComponent(deviceId)}`);
+          selectedDeviceId = res.selectedDeviceId || selectedDeviceId;
+          closeAllDeviceMenus();
+          render(res.dashboard || await refreshDashboard(selectedDeviceId));
+        } catch (err) {
+          showToast(err.message || 'Gagal menghapus device', 'error');
+        }
+        return;
+      }
+
+      if (ev.target.closest('.device-menu-wrap')) return;
+
+      const card = ev.target.closest('.device-item[data-device-id]');
+      if (!card) return;
+      const nextDeviceId = card.getAttribute('data-device-id');
       if (!nextDeviceId || nextDeviceId === selectedDeviceId) return;
       selectedDeviceId = nextDeviceId;
       try {
+        closeAllDeviceMenus();
         const latest = await refreshDashboard(nextDeviceId);
         render(latest);
       } catch (err) {
-        alert(err.message || 'Gagal memuat data device');
+        showToast(err.message || 'Gagal memuat data device', 'error');
       }
     });
-  });
 
-  deviceGridEl.querySelectorAll('.js-device-reset').forEach((btn) => {
-    btn.addEventListener('click', async (ev) => {
-      ev.stopPropagation();
-      const deviceId = btn.getAttribute('data-device-id');
-      if (!deviceId) return;
-      if (!confirm(`Reset counter device ${deviceId} ke 0?`)) return;
-      try {
-        const data = await postJson('/api/counter/reset', { deviceId });
-        selectedDeviceId = deviceId;
-        render(data);
-      } catch (err) {
-        alert(err.message || 'Gagal reset counter');
-      }
+    deviceGridEl.addEventListener('keydown', (ev) => {
+      if (ev.key !== 'Enter' && ev.key !== ' ') return;
+      const card = ev.target.closest('.device-item[data-device-id]');
+      if (!card) return;
+      if (ev.target.closest('.device-menu-wrap')) return;
+      ev.preventDefault();
+      card.click();
     });
-  });
 
-  deviceGridEl.querySelectorAll('.js-device-reset-target').forEach((btn) => {
-    btn.addEventListener('click', async (ev) => {
-      ev.stopPropagation();
-      const deviceId = btn.getAttribute('data-device-id');
-      if (!deviceId) return;
-      if (!confirm(`Reset target saat ini device ${deviceId} ke 0?`)) return;
-      try {
-        const data = await postJson('/api/target-ticker/reset', { deviceId });
-        selectedDeviceId = deviceId;
-        render(data);
-      } catch (err) {
-        alert(err.message || 'Gagal reset target');
-      }
-    });
-  });
+    deviceGridHandlersBound = true;
+  }
 
-  deviceGridEl.querySelectorAll('.js-device-edit-target').forEach((btn) => {
-    btn.addEventListener('click', (ev) => {
-      ev.stopPropagation();
-      const deviceId = btn.getAttribute('data-device-id');
-      if (!deviceId) return;
-      openPerDeviceTargetModal(deviceId);
+  if (!deviceMenuOutsideListenerBound) {
+    document.addEventListener('click', (ev) => {
+      if (ev.target && ev.target.closest && ev.target.closest('.device-menu-wrap')) return;
+      closeAllDeviceMenus();
     });
-  });
-
-  deviceGridEl.querySelectorAll('.js-device-rename').forEach((btn) => {
-    btn.addEventListener('click', async (ev) => {
-      ev.stopPropagation();
-      const deviceId = btn.getAttribute('data-device-id');
-      const currentLabel = btn.getAttribute('data-device-label') || `Mesin ${deviceId}`;
-      if (!deviceId) return;
-      const label = (window.prompt(`Ubah nama device ${deviceId}:`, currentLabel) || '').trim();
-      if (!label) return;
-      try {
-        const res = await putJson(`/api/devices/${encodeURIComponent(deviceId)}`, { label });
-        selectedDeviceId = deviceId;
-        render(res.dashboard || await refreshDashboard(deviceId));
-      } catch (err) {
-        alert(err.message || 'Gagal update nama device');
-      }
+    document.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Escape') closeAllDeviceMenus();
     });
-  });
+    deviceMenuOutsideListenerBound = true;
+  }
 }
 
 function openPerDeviceTargetModal(deviceId) {
@@ -642,15 +785,92 @@ async function init() {
   });
 
   btnAddDeviceEl?.addEventListener('click', async () => {
-    const deviceId = (window.prompt('Masukkan deviceId baru (contoh: device-esp32-03):') || '').trim();
-    if (!deviceId) return;
-    const label = (window.prompt(`Nama tampilan untuk ${deviceId}:`, `Mesin ${deviceId}`) || '').trim();
+    if (inpAddDeviceMachineNameEl) inpAddDeviceMachineNameEl.value = '';
+    showAddDeviceModal(true);
+  });
+
+  btnCancelAddDeviceEl?.addEventListener('click', () => {
+    showAddDeviceModal(false);
+  });
+
+  addDeviceModalEl?.addEventListener('click', (ev) => {
+    if (ev.target === addDeviceModalEl) showAddDeviceModal(false);
+  });
+
+  deviceIdResultModalEl?.addEventListener('click', (ev) => {
+    if (ev.target === deviceIdResultModalEl) showDeviceIdResultModal(false);
+  });
+
+  btnCloseDeviceIdResultEl?.addEventListener('click', () => {
+    showDeviceIdResultModal(false);
+  });
+
+  btnCopyDeviceIdResultEl?.addEventListener('click', async () => {
+    const value = String(inpResultDeviceIdEl?.value || '').trim();
+    if (!value) return;
     try {
-      const res = await postJson('/api/devices', { deviceId, label });
-      selectedDeviceId = res.deviceId || deviceId;
-      render(res.dashboard || await refreshDashboard(selectedDeviceId));
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(value);
+      } else {
+        inpResultDeviceIdEl?.focus();
+        inpResultDeviceIdEl?.select();
+        document.execCommand('copy');
+      }
+      if (resultDeviceHintEl) resultDeviceHintEl.textContent = `Device ID berhasil di-copy: ${value}`;
+      showToast(`Device ID copied: ${value}`, 'success');
+    } catch {
+      if (resultDeviceHintEl) resultDeviceHintEl.textContent = 'Gagal copy otomatis. Silakan copy manual dari field Device ID.';
+      showToast('Gagal copy Device ID', 'error');
+    }
+  });
+
+  renameDeviceModalEl?.addEventListener('click', (ev) => {
+    if (ev.target === renameDeviceModalEl) showRenameDeviceModal(false);
+  });
+
+  btnCancelRenameDeviceEl?.addEventListener('click', () => {
+    showRenameDeviceModal(false);
+  });
+
+  btnSaveRenameDeviceEl?.addEventListener('click', async () => {
+    const deviceId = String(renamingDeviceId || '').trim();
+    const label = String(inpRenameDeviceLabelEl?.value || '').trim();
+    if (!deviceId) return;
+    if (!label) {
+      if (renameDeviceHintEl) renameDeviceHintEl.textContent = 'Nama mesin wajib diisi.';
+      return;
+    }
+
+    try {
+      const res = await putJson(`/api/devices/${encodeURIComponent(deviceId)}`, { label });
+      selectedDeviceId = deviceId;
+      showRenameDeviceModal(false);
+      render(res.dashboard || await refreshDashboard(deviceId));
+      showToast('Nama mesin berhasil diubah', 'success');
     } catch (err) {
-      alert(err.message || 'Gagal menambah device');
+      if (renameDeviceHintEl) renameDeviceHintEl.textContent = err.message || 'Gagal ubah nama mesin';
+      showToast(err.message || 'Gagal ubah nama mesin', 'error');
+    }
+  });
+
+  btnSaveAddDeviceEl?.addEventListener('click', async () => {
+    const label = String(inpAddDeviceMachineNameEl?.value || '').trim();
+    if (!label) {
+      if (addDeviceHintEl) addDeviceHintEl.textContent = 'Nama mesin wajib diisi.';
+      return;
+    }
+    try {
+      const res = await postJson('/api/devices', { label });
+      selectedDeviceId = res.deviceId || selectedDeviceId;
+      render(res.dashboard || await refreshDashboard(selectedDeviceId));
+      if (res.deviceId) {
+        showAddDeviceModal(false);
+        if (inpResultDeviceIdEl) inpResultDeviceIdEl.value = res.deviceId;
+        if (resultDeviceHintEl) resultDeviceHintEl.textContent = 'Salin Device ID ini ke firmware ESP.';
+        showDeviceIdResultModal(true);
+      }
+    } catch (err) {
+      if (addDeviceHintEl) addDeviceHintEl.textContent = err.message || 'Gagal menambah device';
     }
   });
 
@@ -666,7 +886,7 @@ async function init() {
       const pcsPerInterval = parseInt(inpModalPcsPerIntervalEl?.value, 10);
       const intervalSeconds = parseInt(inpModalIntervalSecondsEl?.value, 10);
       if (!pcsPerInterval || pcsPerInterval < 1 || !intervalSeconds || intervalSeconds < 1) {
-        alert('PCS dan DETIK harus angka positif.');
+        showToast('PCS dan DETIK harus angka positif.', 'error');
         return;
       }
 
@@ -684,7 +904,7 @@ async function init() {
       closePerDeviceTargetModal();
       render(latest);
     } catch (err) {
-      alert(err.message || 'Gagal simpan target');
+      showToast(err.message || 'Gagal simpan target', 'error');
     }
   });
 
@@ -702,7 +922,7 @@ async function init() {
       const data = await postJson('/api/counter/reset', { deviceId: selectedDeviceId });
       render(data);
     } catch (err) {
-      alert(err.message);
+      showToast(err.message || 'Gagal reset counter', 'error');
     } finally {
       el('btnResetCounter').disabled = false;
     }
@@ -719,7 +939,7 @@ async function init() {
       const data = await postJson('/api/target-ticker/reset', { deviceId: selectedDeviceId });
       render(data);
     } catch (err) {
-      alert(err.message);
+      showToast(err.message || 'Gagal reset target saat ini', 'error');
     } finally {
       el('btnResetTargetTicker').disabled = false;
     }
@@ -731,7 +951,7 @@ async function init() {
       populateShiftForm(shifts);
       showShiftModal(true);
     } catch (err) {
-      alert(err.message);
+      showToast(err.message || 'Gagal membuka edit shift', 'error');
     }
   });
 
@@ -766,7 +986,7 @@ async function init() {
         placeholder: 'Masukkan password untuk simpan jadwal shift',
       });
       if (!editPassword) {
-        alert('Simpan jadwal shift dibatalkan. Password wajib diisi.');
+        showToast('Simpan jadwal shift dibatalkan. Password wajib diisi.', 'error');
         return;
       }
       const res = await saveShiftConfig(shifts, editPassword);
@@ -774,7 +994,12 @@ async function init() {
       render(res.dashboard || await fetchJson('/api/dashboard'));
     } catch (err) {
       const networkError = err instanceof TypeError || /failed to fetch/i.test(String(err?.message || ''));
-      alert(networkError ? 'Tidak bisa terhubung ke server saat simpan shift. Coba refresh halaman lalu ulangi.' : err.message);
+      showToast(
+        networkError
+          ? 'Tidak bisa terhubung ke server saat simpan shift. Coba refresh halaman lalu ulangi.'
+          : (err.message || 'Gagal simpan jadwal shift'),
+        'error'
+      );
     }
   });
 
@@ -817,12 +1042,12 @@ async function init() {
       const intervalSeconds = parseInt(el('inpIntervalSeconds').value, 10);
 
       if (!pcsPerInterval || pcsPerInterval < 1 || !intervalSeconds || intervalSeconds < 1) {
-        alert('PCS dan DETIK harus angka positif.');
+        showToast('PCS dan DETIK harus angka positif.', 'error');
         return;
       }
       const editPassword = await requestTargetPassword();
       if (!editPassword) {
-        alert('Simpan dibatalkan. Password validasi wajib diisi.');
+        showToast('Simpan dibatalkan. Password validasi wajib diisi.', 'error');
         return;
       }
 
@@ -836,7 +1061,7 @@ async function init() {
       const updated = await refreshDashboard(selectedDeviceId);
       render(updated);
     } catch (err) {
-      alert(err.message);
+      showToast(err.message || 'Gagal simpan target', 'error');
     }
   });
 }

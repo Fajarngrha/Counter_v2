@@ -266,6 +266,52 @@
     </div>
   </div>
 
+  <div id="addDeviceModal" class="modal-overlay hidden">
+    <div class="modal">
+      <h3>Tambah Device Baru</h3>
+      <div class="form-group">
+        <label for="inpAddDeviceMachineName">Nama Mesin</label>
+        <input id="inpAddDeviceMachineName" type="text" placeholder="Contoh: Yamaha Line A">
+      </div>
+      <div id="addDeviceHint" class="status-sub">Isi nama mesin lalu klik Simpan.</div>
+      <div class="modal-actions">
+        <button id="btnCancelAddDevice" class="btn btn-ghost" type="button">Batal</button>
+        <button id="btnSaveAddDevice" class="btn btn-success" type="button">Simpan</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="deviceIdResultModal" class="modal-overlay hidden">
+    <div class="modal">
+      <h3>Device ID Berhasil Dibuat</h3>
+      <div class="form-group">
+        <label for="inpResultDeviceId">Device ID</label>
+        <input id="inpResultDeviceId" type="text" readonly>
+      </div>
+      <div id="resultDeviceHint" class="status-sub">Salin Device ID ini ke firmware ESP.</div>
+      <div class="modal-actions">
+        <button id="btnCloseDeviceIdResult" class="btn btn-ghost" type="button">Tutup</button>
+        <button id="btnCopyDeviceIdResult" class="btn btn-success" type="button">Copy Device ID</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="renameDeviceModal" class="modal-overlay hidden">
+    <div class="modal">
+      <h3>Ubah Nama Mesin</h3>
+      <div class="status-sub">Device: <span id="lblRenameDeviceId">-</span></div>
+      <div class="form-group">
+        <label for="inpRenameDeviceLabel">Nama Mesin Baru</label>
+        <input id="inpRenameDeviceLabel" type="text" placeholder="Masukkan nama mesin">
+      </div>
+      <div id="renameDeviceHint" class="status-sub">Masukkan nama mesin lalu klik Simpan.</div>
+      <div class="modal-actions">
+        <button id="btnCancelRenameDevice" class="btn btn-ghost" type="button">Batal</button>
+        <button id="btnSaveRenameDevice" class="btn btn-success" type="button">Simpan</button>
+      </div>
+    </div>
+  </div>
+
   <div id="shiftConfigModal" class="modal-overlay hidden">
     <div class="modal">
       <h3>Edit Jadwal Shift</h3>

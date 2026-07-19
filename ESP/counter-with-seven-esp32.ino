@@ -21,7 +21,7 @@ const char* mqtt_user = nullptr;
 const char* mqtt_pass = nullptr;
 #endif
 
-const char* deviceId = "device-esp32-02";
+const char* deviceId = "device-zndc-01";
 const char* mqtt_topic_base = "iot/counter";
 String mqtt_topic = "";
 String mqtt_topic_command = "";
@@ -345,7 +345,9 @@ void publishCounterSnapshot() {
   portEXIT_CRITICAL(&mux);
 
   String waktu = getRtcTimestamp();
-  String payload = "[{\"deviceId\":\"" + String(deviceId) + "\",\"waktu\":\"" + waktu + "\",\"counter\":" + String(snapshotCounter) + "}]";
+  String ipAddr = WiFi.localIP().toString();
+  String macAddr = WiFi.macAddress();
+  String payload = "[{\"deviceId\":\"" + String(deviceId) + "\",\"waktu\":\"" + waktu + "\",\"counter\":" + String(snapshotCounter) + ",\"ip\":\"" + ipAddr + "\",\"mac\":\"" + macAddr + "\"}]";
 
   if (client.publish(mqtt_topic.c_str(), payload.c_str())) {
     lastCounterSent = snapshotCounter;
@@ -914,7 +916,9 @@ void loop() {
 
   if (snapshotCounter != lastCounterSent && client.connected()) {
     String waktu = getRtcTimestamp();
-    String payload = "[{\"deviceId\":\"" + String(deviceId) + "\",\"waktu\":\"" + waktu + "\",\"counter\":" + String(snapshotCounter) + "}]";
+    String ipAddr = WiFi.localIP().toString();
+    String macAddr = WiFi.macAddress();
+    String payload = "[{\"deviceId\":\"" + String(deviceId) + "\",\"waktu\":\"" + waktu + "\",\"counter\":" + String(snapshotCounter) + ",\"ip\":\"" + ipAddr + "\",\"mac\":\"" + macAddr + "\"}]";
 
     bool ok = client.publish(mqtt_topic.c_str(), payload.c_str());
 

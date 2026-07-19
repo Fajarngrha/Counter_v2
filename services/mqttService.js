@@ -1,7 +1,7 @@
 const mqtt = require('mqtt');
 const config = require('../config');
 const { applyDeviceCounter, resetTargetTicker, resetCounter, getDeviceIds } = require('./counterService');
-const { getStateByDevice } = require('../db/database');
+const { getStateByDevice, updateDeviceMeta } = require('../db/database');
 
 let client = null;
 let connected = false;
@@ -91,12 +91,13 @@ function parseSensorPayload(raw) {
 
   const waktuRaw = data.waktu ?? data.timestamp ?? null;
   const waktu = waktuRaw ? String(waktuRaw) : null;
+  const address = String(data.address || data.ip || data.ipAddress || data.mac || '').trim() || null;
   if (data.counter !== undefined && data.counter !== null) {
     const counter = Number(data.counter);
     if (!Number.isFinite(counter) || counter < 0) {
       throw new Error('Nilai counter tidak valid');
     }
-    return { counter: Math.floor(counter), waktu, mode: 'absolute', deviceId: normalizeDeviceId(data.deviceId) };
+    return { counter: Math.floor(counter), waktu, mode: 'absolute', deviceId: normalizeDeviceId(data.deviceId), address };
   }
 
   // Kompatibilitas: beberapa device kirim nilai increment per event via "count".
@@ -105,7 +106,7 @@ function parseSensorPayload(raw) {
     if (!Number.isFinite(countDelta) || countDelta < 0) {
       throw new Error('Nilai count tidak valid');
     }
-    return { counter: Math.floor(countDelta), waktu, mode: 'delta', deviceId: normalizeDeviceId(data.deviceId) };
+    return { counter: Math.floor(countDelta), waktu, mode: 'delta', deviceId: normalizeDeviceId(data.deviceId), address };
   }
 
   const fallbackCounterRaw = data.value ?? data.amount;
@@ -113,7 +114,7 @@ function parseSensorPayload(raw) {
   if (!Number.isFinite(fallbackCounter) || fallbackCounter < 0) {
     throw new Error('Nilai counter tidak valid');
   }
-  return { counter: Math.floor(fallbackCounter), waktu, mode: 'absolute', deviceId: normalizeDeviceId(data.deviceId) };
+  return { counter: Math.floor(fallbackCounter), waktu, mode: 'absolute', deviceId: normalizeDeviceId(data.deviceId), address };
 }
 
 function parseCommandPayload(raw) {
@@ -211,8 +212,15 @@ function initMqtt(broadcast) {
         return;
       }
 
-      const { counter, waktu, mode, deviceId: payloadSensorDeviceId } = parseSensorPayload(message);
+      const { counter, waktu, mode, deviceId: payloadSensorDeviceId, address } = parseSensorPayload(message);
       const sensorDeviceId = topicDeviceId || payloadSensorDeviceId;
+      const topicText = String(topic || '').trim();
+      const nextMeta = {};
+      if (address) nextMeta.address = address;
+      if (topicText) nextMeta.last_topic = topicText;
+      if (Object.keys(nextMeta).length > 0) {
+        updateDeviceMeta(sensorDeviceId, nextMeta);
+      }
       let data;
       if (mode === 'delta') {
         const state = getStateByDevice(sensorDeviceId);
