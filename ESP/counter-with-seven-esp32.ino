@@ -9,6 +9,11 @@
 
 const char* ssid = "FID";
 const char* password = "FCC_2022#idn";
+const bool wifiHiddenSsid = false;     // true jika SSID kantor disembunyikan
+const bool wifiDisablePowerSave = true; // bantu stabilkan koneksi di AP enterprise tertentu
+const bool wifiUseBssidLock = false;   // true jika ingin kunci ke AP kantor tertentu
+const int wifiChannelHint = 0;         // isi channel AP (1-13) jika diketahui, 0 = auto
+const uint8_t wifiBssid[6] = {0, 0, 0, 0, 0, 0}; // isi MAC AP jika wifiUseBssidLock=true
 #if USE_HIVEMQ_CLOUD
 const char* mqtt_server = "e49b2fe6d5eb4d3fa5267a1ab8ff12d5.s1.eu.hivemq.cloud";  // contoh: xxxx.s1.eu.hivemq.cloud
 const int mqtt_port = 8883;
@@ -130,6 +135,10 @@ void triggerTargetResetFromButton();
 DateTime getCurrentDateTimeWib();
 void processCounterInput();
 void buildMqttTopics();
+const char* wifiDisconnectReasonText(uint8_t reason);
+void onWifiEvent(WiFiEvent_t event, WiFiEventInfo_t info);
+void beginWifiConnection();
+bool hasValidBssidLockConfig();
 
 struct ShiftInfo {
   const char* name;
@@ -205,6 +214,57 @@ void IRAM_ATTR hitungBarang() {
   }
 }
 
+const char* wifiDisconnectReasonText(uint8_t reason) {
+  switch (reason) {
+    case 2: return "AUTH_EXPIRE";
+    case 4: return "ASSOC_EXPIRE";
+    case 6: return "NOT_AUTHED";
+    case 7: return "NOT_ASSOCED";
+    case 8: return "ASSOC_LEAVE";
+    case 15: return "4WAY_HANDSHAKE_TIMEOUT";
+    case 201: return "NO_AP_FOUND (SSID tidak ditemukan / band tidak cocok)";
+    case 202: return "AUTH_FAIL (password/security tidak cocok)";
+    case 203: return "ASSOC_FAIL (ditolak AP)";
+    case 204: return "HANDSHAKE_TIMEOUT";
+    default: return "UNKNOWN";
+  }
+}
+
+void onWifiEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
+  if (event == ARDUINO_EVENT_WIFI_STA_DISCONNECTED) {
+    const uint8_t reason = info.wifi_sta_disconnected.reason;
+    Serial.print("[WiFi] Disconnect, reason=");
+    Serial.print(reason);
+    Serial.print(" (");
+    Serial.print(wifiDisconnectReasonText(reason));
+    Serial.println(")");
+  } else if (event == ARDUINO_EVENT_WIFI_STA_CONNECTED) {
+    Serial.println("[WiFi] STA connected ke AP.");
+  } else if (event == ARDUINO_EVENT_WIFI_STA_GOT_IP) {
+    Serial.print("[WiFi] Dapat IP: ");
+    Serial.println(WiFi.localIP());
+  }
+}
+
+bool hasValidBssidLockConfig() {
+  for (int i = 0; i < 6; i++) {
+    if (wifiBssid[i] != 0) return true;
+  }
+  return false;
+}
+
+void beginWifiConnection() {
+  const int channel = (wifiChannelHint >= 1 && wifiChannelHint <= 13) ? wifiChannelHint : 0;
+  const bool useLock = wifiUseBssidLock && hasValidBssidLockConfig();
+  const uint8_t* bssidPtr = useLock ? wifiBssid : nullptr;
+  if (wifiUseBssidLock && !useLock) {
+    Serial.println("[WiFi] BSSID lock aktif tapi wifiBssid masih 00:00:00:00:00:00. Fallback ke SSID biasa.");
+  }
+  Serial.print("[WiFi] Connect mode: ");
+  Serial.println(useLock ? "SSID + BSSID lock" : "SSID normal");
+  WiFi.begin(ssid, password, channel, bssidPtr, wifiHiddenSsid);
+}
+
 bool setup_wifi(unsigned long timeoutMs) {
   delay(10);
   Serial.print("Menghubungkan ke WiFi: ");
@@ -212,7 +272,13 @@ bool setup_wifi(unsigned long timeoutMs) {
   setWifiLed(false);
 
   WiFi.mode(WIFI_STA);
-  WiFi.begin(ssid, password);
+  WiFi.setAutoReconnect(true);
+  if (wifiDisablePowerSave) {
+    WiFi.setSleep(false);
+  }
+  WiFi.disconnect(false, true);
+  delay(100);
+  beginWifiConnection();
 
   const unsigned long startMs = millis();
   int dots = 0;
@@ -784,6 +850,7 @@ void setup() {
   Serial.begin(115200);
   delay(2000);
   Serial.println("\n--- Sistem Smart Counter (Seven Segment + DS3231) Memulai ---");
+  WiFi.onEvent(onWifiEvent);
   buildMqttTopics();
   Serial.print("Device ID: ");
   Serial.println(deviceId);
@@ -893,7 +960,7 @@ void loop() {
     lastWifiReconnectAttempt = millis();
     Serial.println("WiFi terputus/belum terhubung, coba konek ulang...");
     WiFi.disconnect(false);
-    WiFi.begin(ssid, password);
+    beginWifiConnection();
   }
 
   // Jaga koneksi MQTT non-blocking. MQTT hanya dicoba jika WiFi sudah terhubung.
