@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>IoT Production Counter - Dashboard</title>
-  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="/css/style.css?v=20260921e">
 </head>
 <body>
   <div class="dashboard">
@@ -98,6 +98,31 @@
           </div>
         </div>
         <div id="deviceGrid" class="device-grid device-grid--dashboard"></div>
+      </div>
+    </section>
+
+    <section class="chart-row">
+      <div class="card chart-card">
+        <div class="chart-header">
+          <div>
+            <div class="card-label">Grafik Pencapaian Produksi</div>
+            <p class="chart-hint">Grafik pencapaian produksi berdasarkan data dari semua mesin yang terhubung.</p>
+          </div>
+          <div class="chart-range-wrap" id="chartRangeMenu">
+            <span id="chartRangeLabel" class="chart-range-label">1 jam</span>
+            <button id="btnChartRange" class="btn-icon btn-icon--small" type="button" title="Opsi rentang" aria-haspopup="true" aria-expanded="false">&#8942;</button>
+            <div class="chart-range-dropdown" id="chartRangeDropdown">
+              <div class="chart-range-title">Rentang waktu</div>
+              <button class="chart-range-option js-chart-range" type="button" data-minutes="5">5 Menit</button>
+              <button class="chart-range-option js-chart-range" type="button" data-minutes="30">30 Menit</button>
+              <button class="chart-range-option js-chart-range is-active" type="button" data-minutes="60">1 jam</button>
+              <button class="chart-range-option js-chart-range" type="button" data-minutes="480">8 jam</button>
+            </div>
+          </div>
+        </div>
+        <div class="chart-canvas-wrap">
+          <canvas id="productionChart" height="280"></canvas>
+        </div>
       </div>
     </section>
 
@@ -408,8 +433,9 @@
     </div>
   </div>
 
+  <script src="/vendor/chart.umd.min.js"></script>
   <script src="/socket.io/socket.io.js"></script>
-  <script src="/js/dashboard.js"></script>
+  <script src="/js/dashboard.js?v=20260921g"></script>
 </body>
 </html>
 

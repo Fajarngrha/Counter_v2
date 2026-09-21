@@ -7,6 +7,7 @@ const {
   saveShiftHistory,
   getTargetByDevice,
   buildTargetSnapshot,
+  appendProductionSample,
 } = require('../db/database');
 const {
   getCurrentShift,
@@ -241,7 +242,9 @@ function incrementCounter(amount = 1, deviceId = 'device-1') {
     last_iot_seen: new Date().toISOString(),
   }, safeDeviceId);
 
-  return getDashboardData({ deviceId: safeDeviceId });
+  const dash = getDashboardData({ deviceId: safeDeviceId });
+  dash.latestSample = recordProductionSample(safeDeviceId, count, amount, null);
+  return dash;
 }
 
 function applyDeviceCounter(deviceCounter, deviceTime, deviceId = 'device-1') {
@@ -318,7 +321,9 @@ function applyDeviceCounter(deviceCounter, deviceTime, deviceId = 'device-1') {
     device_reset_pending: false,
   }, safeDeviceId);
 
-  return getDashboardData({ deviceId: safeDeviceId });
+  const dash = getDashboardData({ deviceId: safeDeviceId });
+  dash.latestSample = recordProductionSample(safeDeviceId, count, delta, deviceTime);
+  return dash;
 }
 
 function resetCounter(deviceId = 'device-1') {
@@ -381,9 +386,17 @@ function resetTargetTicker(deviceId = 'device-1') {
   return getDashboardData({ deviceId: safeDeviceId });
 }
 
-function updateIotSeen(deviceId = 'device-1') {
-  const safeDeviceId = normalizeDeviceId(deviceId);
-  updateStateByDevice({ last_iot_seen: new Date().toISOString() }, safeDeviceId);
+function decorateSample(sample, deviceId) {
+  if (!sample) return null;
+  const meta = getAllDeviceMeta();
+  return {
+    ...sample,
+    device_label: meta[deviceId]?.label || `Mesin ${deviceId}`,
+  };
+}
+
+function recordProductionSample(deviceId, count, delta, waktu) {
+  return decorateSample(appendProductionSample(deviceId, { count, delta, waktu }), deviceId);
 }
 
 function getDashboardData(options = {}) {

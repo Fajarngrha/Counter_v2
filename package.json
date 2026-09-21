@@ -7,7 +7,8 @@
     "start": "node server.js",
     "dev": "node server.js",
     "simulate": "node simulators/iot-simulator.js",
-    "seed:demo": "node scripts/seed-demo-history.js"
+    "seed:demo": "node scripts/seed-demo-history.js",
+    "seed:chart": "node scripts/seed-production-chart.js"
   },
   "dependencies": {
     "dotenv": "^16.4.7",

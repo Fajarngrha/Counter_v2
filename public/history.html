@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>IoT Production Counter - Riwayat</title>
-  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="/css/style.css?v=20260921b">
 </head>
 <body>
   <div class="history-page">
@@ -14,9 +14,9 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
             <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"></path>
           </svg>
-          <span>Riwayat Produksi</span>
+          <span id="historyTitle">Riwayat Produksi</span>
         </div>
-        <p class="history-subtitle">Log pencapaian per shift</p>
+        <p id="historySubtitle" class="history-subtitle">Klik nama mesin untuk membuka riwayat lengkap. Klik kartu untuk melihat pencapaian terakhir.</p>
       </div>
       <div class="header-actions">
         <button id="btnExport" class="btn btn-ghost btn-sm" type="button">
@@ -27,7 +27,7 @@
           </svg>
           Export CSV
         </button>
-        <a class="btn btn-ghost btn-sm" href="/dashboard">Kembali</a>
+        <a id="btnBackHistory" class="btn btn-ghost btn-sm" href="/dashboard">Kembali</a>
         <button id="btnLogout" class="btn btn-ghost btn-sm" type="button">Keluar</button>
       </div>
     </header>
@@ -64,7 +64,7 @@
             <circle cx="11" cy="11" r="8"></circle>
             <path d="m21 21-4.3-4.3"></path>
           </svg>
-          <input id="searchInput" type="search" placeholder="Cari...">
+          <input id="searchInput" type="search" placeholder="Cari mesin, device, atau tanggal...">
         </div>
         <input id="startDate" type="date" class="date-input">
         <input id="endDate" type="date" class="date-input">
@@ -74,30 +74,17 @@
           <option value="Shift 2">Shift 2</option>
           <option value="Shift 3">Shift 3</option>
         </select>
-        <select id="deviceFilter" class="shift-select">
+        <select id="deviceFilter" class="shift-select list-only">
           <option value="all">Semua Device</option>
         </select>
         <button id="btnApply" class="btn btn-primary btn-sm" type="button" style="width:auto;">Terapkan</button>
+        <div class="history-group-actions list-only">
+          <button id="btnExpandAll" class="btn btn-ghost btn-sm" type="button">Buka semua</button>
+          <button id="btnCollapseAll" class="btn btn-ghost btn-sm" type="button">Lipat semua</button>
+        </div>
       </div>
 
-      <div id="tableWrap">
-        <table class="data-table history-table">
-          <thead>
-            <tr>
-              <th>Tanggal</th>
-              <th>Shift</th>
-              <th>Device</th>
-              <th>Total Barang</th>
-              <th>Target / Jam</th>
-              <th>Target / Shift</th>
-              <th>Pencapaian</th>
-              <th>Progress</th>
-              <th>Disimpan Pada</th>
-            </tr>
-          </thead>
-          <tbody id="tbody"></tbody>
-        </table>
-      </div>
+      <div id="historyGroups" class="history-groups"></div>
 
       <div id="emptyState" class="empty-state" style="display:none;">
         Tidak ada data pada filter ini.
@@ -105,6 +92,6 @@
     </div>
   </div>
 
-  <script src="/js/history.js"></script>
+  <script src="/js/history.js?v=20260921b"></script>
 </body>
 </html>

@@ -104,6 +104,263 @@ let deviceMenuOutsideListenerBound = false;
 let deviceGridHandlersBound = false;
 let openedDeviceMenuId = null;
 let renamingDeviceId = null;
+let productionChart = null;
+let productionSeriesCache = { series: {} };
+let chartMinutes = 60;
+const CHART_COLORS = ['#388bfd', '#3fb950', '#d29922', '#a371f7', '#f85149', '#39d0d8', '#e3b341', '#58a6ff', '#bc8cff', '#7ee787'];
+
+function formatChartTick(ts) {
+  return new Intl.DateTimeFormat('id-ID', {
+    timeZone: 'Asia/Jakarta',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  }).format(new Date(ts));
+}
+
+function buildChartPoints(points) {
+  const out = [];
+  (points || []).forEach((point, index) => {
+    const prev = points[index - 1];
+    if (prev && Number(point.ts) - Number(prev.ts) > 180000) {
+      out.push({ x: Number(prev.ts) + 1, y: null });
+    }
+    out.push({
+      x: Number(point.ts),
+      y: Number(point.count) || 0,
+      tanggal: point.tanggal,
+      waktu: point.waktu,
+      device: point.device_label,
+    });
+  });
+  return out;
+}
+
+function getActiveDevices() {
+  return Array.isArray(latestDashboardData?.devices) ? latestDashboardData.devices : [];
+}
+
+function alignChartSeries(payload) {
+  const devices = getActiveDevices();
+  if (!devices.length) return payload || { series: {} };
+  const src = payload?.series || {};
+  const series = {};
+  devices.forEach((device) => {
+    const id = device.id;
+    const label = device.label || id;
+    const existing = src[id] || productionSeriesCache?.series?.[id];
+    const points = Array.isArray(existing?.points) ? existing.points : [];
+    series[id] = {
+      id,
+      label,
+      points,
+      idle: existing?.idle || [],
+    };
+  });
+  return { ...(payload || {}), series };
+}
+
+function seriesToDatasets(payload) {
+  const entries = Object.values(payload?.series || {}).sort((a, b) => String(a.label).localeCompare(String(b.label), 'id'));
+  return entries.map((item, index) => {
+    const color = CHART_COLORS[index % CHART_COLORS.length];
+    const active = !selectedDeviceId || item.id === selectedDeviceId;
+    return {
+      label: item.label,
+      deviceId: item.id,
+      data: buildChartPoints(item.points),
+      borderColor: color,
+      backgroundColor: `${color}22`,
+      borderWidth: active ? 2.4 : 1.1,
+      borderDash: active ? [] : [4, 4],
+      tension: 0,
+      stepped: 'before',
+      pointRadius: 0,
+      pointHoverRadius: 4,
+      spanGaps: false,
+    };
+  });
+}
+
+function upsertProductionChart(payload) {
+  productionSeriesCache = alignChartSeries(payload || { series: {} });
+  const canvas = el('productionChart');
+  if (!canvas || typeof Chart === 'undefined') return;
+  const datasets = seriesToDatasets(productionSeriesCache);
+
+  if (!productionChart) {
+    productionChart = new Chart(canvas.getContext('2d'), {
+      type: 'line',
+      data: { datasets },
+      options: {
+        parsing: false,
+        maintainAspectRatio: false,
+        animation: false,
+        interaction: { mode: 'nearest', intersect: false },
+        plugins: {
+          legend: {
+            labels: { color: '#8b949e', boxWidth: 12, usePointStyle: true },
+          },
+          tooltip: {
+            callbacks: {
+              title(items) {
+                const raw = items[0]?.raw || {};
+                return `${raw.tanggal || '-'} ${raw.waktu || formatChartTick(items[0]?.parsed?.x)}`;
+              },
+              label(item) {
+                const count = item.parsed?.y;
+                if (count == null) return `${item.dataset.label}: tidak ada data`;
+                return `${item.dataset.label}: ${fmtNumber(count)} pcs`;
+              },
+            },
+          },
+        },
+        scales: {
+          x: {
+            type: 'linear',
+            ticks: {
+              color: '#8b949e',
+              maxTicksLimit: 8,
+              callback: (value) => formatChartTick(value),
+            },
+            grid: { color: 'rgba(48, 54, 61, 0.7)' },
+            title: { display: true, text: 'Waktu', color: '#8b949e' },
+          },
+          y: {
+            beginAtZero: true,
+            ticks: { color: '#8b949e' },
+            grid: { color: 'rgba(48, 54, 61, 0.7)' },
+            title: { display: true, text: 'Counting (pcs)', color: '#8b949e' },
+          },
+        },
+      },
+    });
+    return;
+  }
+
+  productionChart.data.datasets = datasets;
+  productionChart.update('none');
+}
+
+function filterSeriesByMinutes(payload, minutes) {
+  const series = payload?.series || {};
+  const allTs = Object.values(series).flatMap((item) => (item.points || []).map((point) => Number(point.ts) || 0));
+  const latest = Math.max(Date.now(), ...allTs, 0);
+  const minTs = latest - Math.max(1, Number(minutes) || 60) * 60 * 1000;
+  const next = { ...payload, minutes, series: {} };
+  Object.entries(series).forEach(([id, item]) => {
+    const points = (item.points || []).filter((point) => Number(point.ts) >= minTs);
+    next.series[id] = { ...item, points };
+  });
+  return next;
+}
+
+function drawFallbackChart(payload) {
+  const canvas = el('productionChart');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const wrap = canvas.parentElement;
+  const width = wrap?.clientWidth || 800;
+  const height = wrap?.clientHeight || 280;
+  canvas.width = width;
+  canvas.height = height;
+  ctx.fillStyle = '#0d1117';
+  ctx.fillRect(0, 0, width, height);
+  const datasets = seriesToDatasets(payload).filter((set) => set.data.some((row) => row.y != null));
+  if (!datasets.length) {
+    ctx.fillStyle = '#8b949e';
+    ctx.font = '14px Segoe UI';
+    ctx.fillText('Belum ada data grafik.', 24, height / 2);
+    return;
+  }
+  const xs = datasets.flatMap((set) => set.data.filter((row) => row.y != null).map((row) => row.x));
+  const ys = datasets.flatMap((set) => set.data.filter((row) => row.y != null).map((row) => row.y));
+  const minX = Math.min(...xs);
+  const maxX = Math.max(...xs);
+  const maxY = Math.max(1, ...ys);
+  const pad = { l: 48, r: 16, t: 16, b: 28 };
+  const w = width - pad.l - pad.r;
+  const h = height - pad.t - pad.b;
+  ctx.strokeStyle = '#30363d';
+  ctx.beginPath();
+  ctx.moveTo(pad.l, pad.t);
+  ctx.lineTo(pad.l, pad.t + h);
+  ctx.lineTo(pad.l + w, pad.t + h);
+  ctx.stroke();
+  datasets.forEach((set) => {
+    const pts = set.data.filter((row) => row.y != null);
+    if (pts.length < 2) return;
+    ctx.strokeStyle = set.borderColor;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    pts.forEach((row, index) => {
+      const x = pad.l + ((row.x - minX) / Math.max(1, maxX - minX)) * w;
+      const y = pad.t + h - (row.y / maxY) * h;
+      if (index === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+  });
+}
+
+async function loadProductionChart() {
+  let payload = null;
+  try {
+    payload = await fetchJson(`/api/production-series?minutes=${encodeURIComponent(chartMinutes)}`);
+  } catch (err) {
+    try {
+      const fallback = await fetch('/data/production-series.json', { credentials: 'same-origin' });
+      if (!fallback.ok) throw new Error(err.message || 'Request gagal');
+      payload = await fallback.json();
+    } catch {
+      return;
+    }
+  }
+
+  payload = alignChartSeries(filterSeriesByMinutes(payload, chartMinutes));
+  if (typeof Chart === 'undefined') {
+    drawFallbackChart(payload);
+    return;
+  }
+  upsertProductionChart(payload);
+}
+
+function appendProductionPoint(sample) {
+  if (!sample || !sample.device_id) return;
+  const activeIds = new Set(getActiveDevices().map((device) => device.id));
+  if (activeIds.size && !activeIds.has(sample.device_id)) return;
+  if (!productionSeriesCache.series) productionSeriesCache.series = {};
+  const id = sample.device_id;
+  if (!productionSeriesCache.series[id]) {
+    productionSeriesCache.series[id] = {
+      id,
+      label: sample.device_label || id,
+      points: [],
+      idle: [],
+    };
+  }
+  const group = productionSeriesCache.series[id];
+  group.label = sample.device_label || group.label;
+  const last = group.points[group.points.length - 1];
+  if (last && Number(last.ts) === Number(sample.ts) && Number(last.count) === Number(sample.count)) return;
+  group.points.push({
+    ts: sample.ts,
+    tanggal: sample.tanggal,
+    jam: sample.jam,
+    menit: sample.menit,
+    detik: sample.detik,
+    waktu: sample.waktu,
+    count: sample.count,
+    delta: sample.delta,
+    produced: sample.produced,
+    device_id: id,
+    device_label: group.label,
+  });
+  const minTs = Date.now() - chartMinutes * 60 * 1000;
+  group.points = group.points.filter((point) => Number(point.ts) >= minTs);
+  upsertProductionChart(productionSeriesCache);
+}
 
 function showToast(message, variant = 'info') {
   const text = String(message || '').trim();
@@ -539,6 +796,8 @@ function render(data) {
   renderDeviceCards(data.devices || [], selectedDeviceId);
 
   syncTargetTickerState(data);
+  if (data.latestSample) appendProductionPoint(data.latestSample);
+  else upsertProductionChart(productionSeriesCache);
 }
 
 function renderDeviceCards(devices, activeDeviceId) {
@@ -656,6 +915,7 @@ function renderDeviceCards(devices, activeDeviceId) {
           selectedDeviceId = res.selectedDeviceId || selectedDeviceId;
           closeAllDeviceMenus();
           render(res.dashboard || await refreshDashboard(selectedDeviceId));
+          await loadProductionChart();
         } catch (err) {
           showToast(err.message || 'Gagal menghapus device', 'error');
         }
@@ -760,10 +1020,42 @@ async function init() {
   const initial = await refreshDashboard();
   render(initial);
   await initTargetConfig();
+  await loadProductionChart();
+
+  const chartRangeMenu = document.getElementById('chartRangeMenu');
+  const btnChartRange = document.getElementById('btnChartRange');
+  const setChartRangeOpen = (open) => {
+    chartRangeMenu?.classList.toggle('is-open', open);
+    btnChartRange?.setAttribute('aria-expanded', String(!!open));
+  };
+
+  btnChartRange?.addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    setChartRangeOpen(!chartRangeMenu?.classList.contains('is-open'));
+  });
+
+  document.addEventListener('click', (ev) => {
+    if (!chartRangeMenu || chartRangeMenu.contains(ev.target)) return;
+    setChartRangeOpen(false);
+  });
+
+  chartRangeMenu?.addEventListener('click', async (ev) => {
+    const btn = ev.target.closest('.js-chart-range');
+    if (!btn) return;
+    chartMinutes = Number(btn.getAttribute('data-minutes')) || 60;
+    document.querySelectorAll('.js-chart-range').forEach((elBtn) => {
+      elBtn.classList.toggle('is-active', elBtn === btn);
+    });
+    const label = el('chartRangeLabel');
+    if (label) label.textContent = btn.textContent.trim();
+    setChartRangeOpen(false);
+    await loadProductionChart();
+  });
 
   if (typeof io === 'function') {
     const socket = io();
     socket.on('dashboard:update', async (data) => {
+      if (data?.latestSample) appendProductionPoint(data.latestSample);
       if (selectedDeviceId && data.selectedDeviceId && data.selectedDeviceId !== selectedDeviceId) {
         try {
           const fresh = await refreshDashboard(selectedDeviceId);
@@ -863,6 +1155,7 @@ async function init() {
       const res = await postJson('/api/devices', { label });
       selectedDeviceId = res.deviceId || selectedDeviceId;
       render(res.dashboard || await refreshDashboard(selectedDeviceId));
+      await loadProductionChart();
       if (res.deviceId) {
         showAddDeviceModal(false);
         if (inpResultDeviceIdEl) inpResultDeviceIdEl.value = res.deviceId;

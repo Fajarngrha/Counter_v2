@@ -29,6 +29,7 @@ const {
   getAllDeviceMeta,
   updateDeviceMeta,
   deleteDevice,
+  getProductionSeries,
 } = require('./db/database');
 
 const app = express();
@@ -140,6 +141,20 @@ app.get('/api/history', requireAuth, (req, res) => {
   const device = req.query.device || 'all';
   const search = req.query.search || '';
   res.json(getHistory(start, end, { shift, device, search }));
+});
+
+app.get('/api/production-series', requireAuth, (req, res) => {
+  try {
+    const device = req.query.device || 'all';
+    res.json(getProductionSeries({
+      minutes: req.query.minutes,
+      hours: req.query.hours,
+      device,
+    }));
+  } catch (err) {
+    console.error('[API] production-series:', err.message);
+    res.status(500).json({ error: err.message || 'Gagal memuat grafik produksi' });
+  }
 });
 
 app.get('/api/target', requireAuth, (req, res) => {
@@ -306,6 +321,11 @@ app.get('/dashboard', requireAuth, (req, res) => {
 
 app.get('/history', requireAuth, (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'history.html'));
+});
+
+app.get('/history/device/:id', requireAuth, (req, res) => {
+  const id = encodeURIComponent(String(req.params.id || '').trim());
+  return res.redirect(`/history?device=${id}`);
 });
 
 function broadcastDashboard(data) {

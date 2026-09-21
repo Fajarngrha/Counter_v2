@@ -8,6 +8,12 @@ if (!fs.existsSync(dataDir)) {
 }
 
 const dbPath = path.join(dataDir, 'db.json');
+const seriesPath = path.join(dataDir, 'production-series.json');
+
+const SERIES_MAX_POINTS = 1800;
+const SERIES_HEARTBEAT_MS = 25000;
+const SERIES_MAX_AGE_MS = 48 * 60 * 60 * 1000;
+const SERIES_IDLE_MIN_MS = 2 * 60 * 1000;
 
 const DEMO_HISTORY = [
   {
@@ -403,9 +409,13 @@ function getHistory(startDate, endDate, options = {}) {
     rows = rows.filter((r) => (r.device_id || 'legacy') === device);
   }
 
+  const deviceMeta = data.device_meta || {};
+  const labelOf = (deviceId) => normalizeDeviceLabel(deviceMeta[deviceId]?.label, deviceId);
+
   if (q) {
     rows = rows.filter((r) => {
-      const haystack = `${r.tanggal} ${r.shift} ${r.total_barang} ${r.device_id || 'legacy'}`.toLowerCase();
+      const deviceId = r.device_id || 'legacy';
+      const haystack = `${r.tanggal} ${r.shift} ${r.total_barang} ${deviceId} ${labelOf(deviceId)}`.toLowerCase();
       return haystack.includes(q);
     });
   }
@@ -422,7 +432,13 @@ function getHistory(startDate, endDate, options = {}) {
     return b.id - a.id;
   });
 
-  const enriched = rows.map((r) => normalizeHistoryRow(r, fallbackTarget));
+  const enriched = rows.map((r) => {
+    const row = normalizeHistoryRow(r, fallbackTarget);
+    return {
+      ...row,
+      device_label: labelOf(row.device_id),
+    };
+  });
 
   const totalBarang = enriched.reduce((s, r) => s + r.total_barang, 0);
   const totalTarget = enriched.reduce((s, r) => s + r.target_per_shift, 0);
@@ -432,7 +448,16 @@ function getHistory(startDate, endDate, options = {}) {
 
   return {
     rows: enriched,
-    devices: Array.from(new Set(data.shift_history.map((r) => r.device_id || 'legacy'))).sort(),
+    devices: Array.from(new Set([
+      ...Object.keys(data.devices || {}),
+      ...data.shift_history.map((r) => r.device_id || 'legacy'),
+    ]))
+      .filter((id) => id && id !== 'legacy')
+      .map((id) => ({
+        id,
+        label: labelOf(id),
+      }))
+      .sort((a, b) => String(a.label).localeCompare(String(b.label), 'id', { numeric: true, sensitivity: 'base' })),
     summary: {
       totalRecords: enriched.length,
       totalBarang,
@@ -511,6 +536,11 @@ function ensureDeviceState(deviceId) {
     if (!data.device_meta || typeof data.device_meta !== 'object') data.device_meta = {};
     data.device_meta[safeDeviceId] = normalizeDeviceMeta(data.device_meta[safeDeviceId], safeDeviceId);
     writeDb(data);
+    const seriesData = readSeriesFile();
+    if (!Array.isArray(seriesData[safeDeviceId])) {
+      seriesData[safeDeviceId] = [];
+      writeSeriesFile(seriesData);
+    }
   }
 
   return normalizeDeviceState(data.devices[safeDeviceId]);
@@ -560,6 +590,18 @@ function deleteDevice(deviceId) {
   delete data.devices[safeDeviceId];
   if (data.production_targets && typeof data.production_targets === 'object') {
     delete data.production_targets[safeDeviceId];
+  }
+  if (data.production_series && typeof data.production_series === 'object') {
+    delete data.production_series[safeDeviceId];
+  }
+  if (fs.existsSync(seriesPath)) {
+    try {
+      const seriesData = readSeriesFile();
+      delete seriesData[safeDeviceId];
+      writeSeriesFile(seriesData);
+    } catch {
+      // ignore series cleanup error
+    }
   }
   if (data.device_meta && typeof data.device_meta === 'object') {
     delete data.device_meta[safeDeviceId];
@@ -616,6 +658,175 @@ function updateTarget(targetPerHour, pcsPerInterval, intervalSeconds, model = '-
   writeDb(data);
 }
 
+function toWibParts(date = new Date()) {
+  const fmt = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Jakarta',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  });
+  const parts = Object.fromEntries(fmt.formatToParts(date).map((part) => [part.type, part.value]));
+  return {
+    tanggal: `${parts.year}-${parts.month}-${parts.day}`,
+    jam: parts.hour,
+    menit: parts.minute,
+    detik: parts.second,
+    waktu: `${parts.hour}:${parts.minute}:${parts.second}`,
+  };
+}
+
+function parseSampleTime(waktu) {
+  if (!waktu) return new Date();
+  const text = String(waktu).trim();
+  const native = Date.parse(text);
+  if (Number.isFinite(native)) return new Date(native);
+  const match = text.match(/^(\d{4}-\d{2}-\d{2})[ T](\d{2}):(\d{2}):(\d{2})/);
+  if (match) return new Date(`${match[1]}T${match[2]}:${match[3]}:${match[4]}+07:00`);
+  return new Date();
+}
+
+function readSeriesFile() {
+  if (!fs.existsSync(seriesPath)) return {};
+  try {
+    const parsed = JSON.parse(fs.readFileSync(seriesPath, 'utf-8'));
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeSeriesFile(data) {
+  fs.writeFileSync(seriesPath, JSON.stringify(data), 'utf-8');
+}
+
+function pruneSeriesList(list, nowMs = Date.now()) {
+  const minTs = nowMs - SERIES_MAX_AGE_MS;
+  let next = (Array.isArray(list) ? list : []).filter((row) => Number(row?.ts) >= minTs);
+  if (next.length > SERIES_MAX_POINTS) {
+    next = next.slice(next.length - SERIES_MAX_POINTS);
+  }
+  return next;
+}
+
+function appendProductionSample(deviceId, options = {}) {
+  const safeDeviceId = String(deviceId || '').trim() || DEFAULT_DEVICE_ID;
+  const count = Math.max(0, Math.floor(Number(options.count) || 0));
+  const delta = Math.max(0, Math.floor(Number(options.delta) || 0));
+  const at = parseSampleTime(options.waktu);
+  const ts = at.getTime();
+  const wib = toWibParts(at);
+  const produced = delta > 0;
+  const data = readSeriesFile();
+  const list = pruneSeriesList(data[safeDeviceId] || [], ts);
+  const last = list[list.length - 1];
+
+  if (!produced && last && ts - Number(last.ts) < SERIES_HEARTBEAT_MS) {
+    return null;
+  }
+
+  const sample = {
+    ts,
+    tanggal: wib.tanggal,
+    jam: wib.jam,
+    menit: wib.menit,
+    detik: wib.detik,
+    waktu: wib.waktu,
+    count,
+    delta,
+    produced,
+    device_id: safeDeviceId,
+  };
+  list.push(sample);
+  data[safeDeviceId] = pruneSeriesList(list, ts);
+  writeSeriesFile(data);
+  return sample;
+}
+
+function findIdleWindows(points, nowMs = Date.now()) {
+  const idle = [];
+  if (!Array.isArray(points) || points.length === 0) return idle;
+  const prod = points.filter((row) => row.produced || Number(row.delta) > 0);
+  const markers = prod.length ? prod : points;
+  let prev = markers[0];
+  for (let i = 1; i < markers.length; i += 1) {
+    const cur = markers[i];
+    const gap = Number(cur.ts) - Number(prev.ts);
+    if (gap >= SERIES_IDLE_MIN_MS) {
+      idle.push({
+        startTs: Number(prev.ts),
+        endTs: Number(cur.ts),
+        startWaktu: `${prev.tanggal} ${prev.waktu}`,
+        endWaktu: `${cur.tanggal} ${cur.waktu}`,
+        durationMs: gap,
+        count: Number(prev.count) || 0,
+      });
+    }
+    prev = cur;
+  }
+  const last = markers[markers.length - 1];
+  const tailGap = nowMs - Number(last.ts);
+  if (tailGap >= SERIES_IDLE_MIN_MS) {
+    const nowParts = toWibParts(new Date(nowMs));
+    idle.push({
+      startTs: Number(last.ts),
+      endTs: nowMs,
+      startWaktu: `${last.tanggal} ${last.waktu}`,
+      endWaktu: `${nowParts.tanggal} ${nowParts.waktu}`,
+      durationMs: tailGap,
+      count: Number(last.count) || 0,
+    });
+  }
+  return idle.slice(-12);
+}
+
+function getProductionSeries(options = {}) {
+  const requestedMinutes = Number(options.minutes);
+  const requestedHours = Number(options.hours);
+  const minutes = Number.isFinite(requestedMinutes) && requestedMinutes > 0
+    ? requestedMinutes
+    : (Number.isFinite(requestedHours) && requestedHours > 0 ? requestedHours * 60 : 60);
+  const windowMinutes = Math.min(48 * 60, Math.max(1, Math.floor(minutes)));
+  const filterDevice = String(options.device || 'all').trim() || 'all';
+  const nowMs = Date.now();
+  const minTs = nowMs - windowMinutes * 60 * 1000;
+  const raw = readSeriesFile();
+  const meta = getAllDeviceMeta();
+  const ids = Object.keys(getAllDeviceStates());
+  const known = new Set(ids);
+  const series = {};
+
+  for (const deviceId of known) {
+    if (filterDevice !== 'all' && deviceId !== filterDevice) continue;
+    const points = pruneSeriesList(raw[deviceId] || [], nowMs)
+      .filter((row) => Number(row.ts) >= minTs)
+      .map((row) => ({
+        ts: Number(row.ts),
+        tanggal: row.tanggal,
+        jam: row.jam,
+        menit: row.menit,
+        detik: row.detik,
+        waktu: row.waktu,
+        count: Number(row.count) || 0,
+        delta: Number(row.delta) || 0,
+        produced: !!row.produced,
+        device_id: deviceId,
+        device_label: normalizeDeviceLabel(meta[deviceId]?.label, deviceId),
+      }));
+    series[deviceId] = {
+      id: deviceId,
+      label: normalizeDeviceLabel(meta[deviceId]?.label, deviceId),
+      points,
+      idle: findIdleWindows(points, nowMs),
+    };
+  }
+
+  return { minutes: windowMinutes, hours: windowMinutes / 60, generatedAt: nowMs, series };
+}
+
 module.exports = {
   saveShiftHistory,
   getHistory,
@@ -635,4 +846,6 @@ module.exports = {
   getAllTargets,
   updateTarget,
   buildTargetSnapshot,
+  appendProductionSample,
+  getProductionSeries,
 };

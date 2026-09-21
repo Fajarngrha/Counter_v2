@@ -1,0 +1,20 @@
+
+
+TM2637
+1. 3V >> CLK
+2. GND >> SD0
+3. CLK >> P21
+4. DIO >> GND
+
+DS3231
+1. GND >> GDN
+2. VCC >> P13
+
+
+RESET COUNTER
+1. D6 >> P4
+RESET TARGET
+1. D7 >> P0
+
+COUNTER
+1. D5 >> P16
