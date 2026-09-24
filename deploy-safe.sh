@@ -27,6 +27,7 @@ BACKUP_DIR="$BACKUP_ROOT/$(date +%F_%H%M%S)"
 DATA_FILES=(
   "db.json"
   "shift-config.json"
+  "production-series.json"
 )
 
 SUDO_CMD=""

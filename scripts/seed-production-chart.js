@@ -55,26 +55,25 @@ function hashSeed(text) {
 
 function buildDeviceSeries(deviceId, nowMs, hours = 8) {
   const seed = hashSeed(deviceId);
-  const stepMs = 20000;
   const startMs = nowMs - hours * 60 * 60 * 1000;
-  const pcsPerTick = 1 + (seed % 3);
+  const pulseMs = 8000 + (seed % 5) * 1000;
   const idleWindows = [
-    { from: startMs + (35 + (seed % 20)) * 60 * 1000, dur: (4 + (seed % 5)) * 60 * 1000 },
-    { from: startMs + (140 + (seed % 30)) * 60 * 1000, dur: (6 + (seed % 7)) * 60 * 1000 },
-    { from: startMs + (280 + (seed % 40)) * 60 * 1000, dur: (8 + (seed % 6)) * 60 * 1000 },
+    { from: nowMs - (7 * 60 + (seed % 8)) * 60 * 1000, dur: (8 + (seed % 5)) * 60 * 1000 },
+    { from: nowMs - (3 * 60 + (seed % 10)) * 60 * 1000, dur: (6 + (seed % 4)) * 60 * 1000 },
+    { from: nowMs - (42 + (seed % 8)) * 60 * 1000, dur: (8 + (seed % 5)) * 60 * 1000 },
+    { from: nowMs - (12 + (seed % 5)) * 60 * 1000, dur: (3 + (seed % 3)) * 60 * 1000 },
   ];
-
   const inIdle = (ts) => idleWindows.some((win) => ts >= win.from && ts < win.from + win.dur);
 
   const points = [];
-  let count = 40 + (seed % 80);
+  let count = 80 + (seed % 40);
   points.push(makeSample(deviceId, new Date(startMs), count, 0));
 
-  for (let ts = startMs + stepMs; ts <= nowMs; ts += stepMs) {
+  for (let ts = startMs + pulseMs; ts <= nowMs; ts += pulseMs) {
     const idle = inIdle(ts);
-    const delta = idle ? 0 : pcsPerTick;
+    const delta = idle ? 0 : 1;
     count += delta;
-    if (idle && points.length && !points[points.length - 1].produced && ts - points[points.length - 1].ts < 25000) {
+    if (idle && points.length && !points[points.length - 1].produced && ts - points[points.length - 1].ts < pulseMs * 2) {
       continue;
     }
     points.push(makeSample(deviceId, new Date(ts), count, delta));

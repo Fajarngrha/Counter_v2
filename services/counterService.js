@@ -399,6 +399,11 @@ function recordProductionSample(deviceId, count, delta, waktu) {
   return decorateSample(appendProductionSample(deviceId, { count, delta, waktu }), deviceId);
 }
 
+function updateIotSeen(deviceId = 'device-1') {
+  const safeDeviceId = normalizeDeviceId(deviceId);
+  updateStateByDevice({ last_iot_seen: new Date().toISOString() }, safeDeviceId);
+}
+
 function getDashboardData(options = {}) {
   const devicesState = getAllDeviceStates();
   const deviceMeta = getAllDeviceMeta();

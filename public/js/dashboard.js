@@ -121,17 +121,24 @@ function formatChartTick(ts) {
 
 function buildChartPoints(points) {
   const out = [];
+  let cumulative = 0;
   (points || []).forEach((point, index) => {
     const prev = points[index - 1];
-    if (prev && Number(point.ts) - Number(prev.ts) > 180000) {
-      out.push({ x: Number(prev.ts) + 1, y: null });
-    }
+    const count = Number(point.count) || 0;
+    const prevCount = prev ? Number(prev.count) || 0 : count;
+    const hasSensorPulse = point.produced === true
+      || Number(point.delta) > 0
+      || count > prevCount;
+    const step = hasSensorPulse ? 1 : 0;
+    cumulative += step;
     out.push({
       x: Number(point.ts),
-      y: Number(point.count) || 0,
+      y: cumulative,
       tanggal: point.tanggal,
       waktu: point.waktu,
       device: point.device_label,
+      delta: step,
+      count: Number(point.count) || 0,
     });
   });
   return out;
@@ -161,24 +168,45 @@ function alignChartSeries(payload) {
   return { ...(payload || {}), series };
 }
 
+function getChartDevice() {
+  const devices = getActiveDevices();
+  if (!devices.length) return null;
+  return devices.find((device) => device.id === selectedDeviceId) || devices[0];
+}
+
+function updateChartHeader() {
+  const device = getChartDevice();
+  const titleEl = el('chartTitle');
+  const hintEl = el('chartHint');
+  if (!device) {
+    if (titleEl) titleEl.textContent = 'Grafik Pencapaian Produksi';
+    if (hintEl) hintEl.textContent = 'Klik kartu mesin untuk melihat grafiknya.';
+    return;
+  }
+  if (titleEl) titleEl.textContent = `Grafik Pencapaian — ${device.label || device.id}`;
+  // if (hintEl) hintEl.textContent = `Kumulatif mesin ${device.label || device.id}: setiap data sensor yang masuk menaikkan garis +1.`;
+}
+
 function seriesToDatasets(payload) {
-  const entries = Object.values(payload?.series || {}).sort((a, b) => String(a.label).localeCompare(String(b.label), 'id'));
+  const chartDevice = getChartDevice();
+  const entries = Object.values(payload?.series || {})
+    .filter((item) => !chartDevice || item.id === chartDevice.id)
+    .sort((a, b) => String(a.label).localeCompare(String(b.label), 'id'));
   return entries.map((item, index) => {
     const color = CHART_COLORS[index % CHART_COLORS.length];
-    const active = !selectedDeviceId || item.id === selectedDeviceId;
     return {
       label: item.label,
       deviceId: item.id,
       data: buildChartPoints(item.points),
       borderColor: color,
-      backgroundColor: `${color}22`,
-      borderWidth: active ? 2.4 : 1.1,
-      borderDash: active ? [] : [4, 4],
+      backgroundColor: `${color}33`,
+      borderWidth: 2.6,
       tension: 0,
       stepped: 'before',
       pointRadius: 0,
       pointHoverRadius: 4,
-      spanGaps: false,
+      fill: true,
+      spanGaps: true,
     };
   });
 }
@@ -188,6 +216,7 @@ function upsertProductionChart(payload) {
   const canvas = el('productionChart');
   if (!canvas || typeof Chart === 'undefined') return;
   const datasets = seriesToDatasets(productionSeriesCache);
+  updateChartHeader();
 
   if (!productionChart) {
     productionChart = new Chart(canvas.getContext('2d'), {
@@ -209,9 +238,11 @@ function upsertProductionChart(payload) {
                 return `${raw.tanggal || '-'} ${raw.waktu || formatChartTick(items[0]?.parsed?.x)}`;
               },
               label(item) {
-                const count = item.parsed?.y;
-                if (count == null) return `${item.dataset.label}: tidak ada data`;
-                return `${item.dataset.label}: ${fmtNumber(count)} pcs`;
+                const total = item.parsed?.y;
+                if (total == null) return `${item.dataset.label}: tidak ada data`;
+                const delta = Number(item.raw?.delta) || 0;
+                const extra = delta > 0 ? ` (+${fmtNumber(delta)})` : '';
+                return `${item.dataset.label}: ${fmtNumber(total)} pcs`;
               },
             },
           },
@@ -231,7 +262,7 @@ function upsertProductionChart(payload) {
             beginAtZero: true,
             ticks: { color: '#8b949e' },
             grid: { color: 'rgba(48, 54, 61, 0.7)' },
-            title: { display: true, text: 'Counting (pcs)', color: '#8b949e' },
+            title: { display: true, text: 'Pencapaian (pcs)', color: '#8b949e' },
           },
         },
       },
