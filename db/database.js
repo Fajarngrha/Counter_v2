@@ -819,7 +819,10 @@ function getProductionSeries(options = {}) {
   for (const deviceId of known) {
     if (filterDevice !== 'all' && deviceId !== filterDevice) continue;
     const points = pruneSeriesList(raw[deviceId] || [], nowMs)
-      .filter((row) => Number(row.ts) >= minTs)
+      .filter((row) => {
+        const ts = Number(row.ts);
+        return ts >= minTs && ts <= nowMs + 15000;
+      })
       .map((row) => ({
         ts: Number(row.ts),
         tanggal: row.tanggal,

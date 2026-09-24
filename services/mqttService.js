@@ -232,6 +232,9 @@ function initMqtt(broadcast) {
       } else {
         data = applyDeviceCounter(counter, waktu, sensorDeviceId);
       }
+      const nextCount = data?.devices?.find?.((row) => row.id === sensorDeviceId)?.count
+        ?? data?.totals?.counter;
+      console.log(`[MQTT] increment ${sensorDeviceId} mode=${mode} raw=${counter} web=${nextCount}`);
       if (broadcastFn) broadcastFn(data);
     } catch (err) {
       console.error('[MQTT] Error memproses pesan:', err.message);

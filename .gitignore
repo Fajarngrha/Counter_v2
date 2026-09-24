@@ -1,1 +1,8 @@
 node_modules/
+
+# Data runtime produksi. Jangan di-commit dari laptop development.
+data/db.json
+data/shift-config.json
+data/production-series.json
+data/*.broken.*
+public/data/production-series.json

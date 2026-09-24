@@ -284,6 +284,7 @@ function applyDeviceCounter(deviceCounter, deviceTime, deviceId = 'device-1') {
   const lastDeviceCounter = Number.isFinite(state.last_device_counter)
     ? state.last_device_counter
     : null;
+  const previousCount = count;
 
   // Migrasi mulus dari mode lama (absolute counter) ke mode offset.
   if (deviceOffset === null) {
@@ -300,12 +301,16 @@ function applyDeviceCounter(deviceCounter, deviceTime, deviceId = 'device-1') {
     // Jika counter device turun (misalnya device reset), offset boleh negatif
     // agar counter dashboard tetap lanjut dari angka sekarang (tanpa freeze).
     deviceOffset = nextDeviceCounter - count;
+  } else if (lastDeviceCounter !== null && nextDeviceCounter > lastDeviceCounter) {
+    // Setiap kenaikan counter ESP selalu menambah angka web.
+    // Ini mencegah freeze setelah restore backup/offset usang.
+    count += nextDeviceCounter - lastDeviceCounter;
+    deviceOffset = nextDeviceCounter - count;
   }
 
   const mappedCounter = Math.max(0, nextDeviceCounter - deviceOffset);
-  const safeCounter = Math.max(count, mappedCounter);
-  const delta = safeCounter - count;
-  count = safeCounter;
+  count = Math.max(count, mappedCounter);
+  const delta = count - previousCount;
   dailyTotal += delta;
 
   updateStateByDevice({

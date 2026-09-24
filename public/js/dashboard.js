@@ -119,6 +119,12 @@ function formatChartTick(ts) {
   }).format(new Date(ts));
 }
 
+function getChartWindow(minutes = chartMinutes) {
+  const now = Date.now();
+  const span = Math.max(1, Number(minutes) || 60) * 60 * 1000;
+  return { min: now - span, max: now };
+}
+
 function normalizeChartTs(ts) {
   const t = Number(ts);
   if (!Number.isFinite(t)) return t;
@@ -131,6 +137,7 @@ function normalizeChartTs(ts) {
 }
 
 function buildChartPoints(points) {
+  const { min, max } = getChartWindow();
   const out = [];
   let cumulative = 0;
   (points || []).forEach((point, index) => {
@@ -141,8 +148,9 @@ function buildChartPoints(points) {
       || Number(point.delta) > 0
       || count > prevCount;
     const step = hasSensorPulse ? 1 : 0;
-    cumulative += step;
     const x = normalizeChartTs(point.ts);
+    if (x < min || x > max + 15000) return;
+    cumulative += step;
     out.push({
       x,
       y: cumulative,
@@ -153,6 +161,24 @@ function buildChartPoints(points) {
       count: Number(point.count) || 0,
     });
   });
+  if (!out.length || out[0].x > min) {
+    out.unshift({
+      x: min,
+      y: 0,
+      waktu: formatChartTick(min),
+      delta: 0,
+      count: 0,
+    });
+  }
+  const last = out[out.length - 1];
+  if (last && last.x < max) {
+    out.push({
+      ...last,
+      x: max,
+      waktu: formatChartTick(max),
+      delta: 0,
+    });
+  }
   return out;
 }
 
@@ -262,6 +288,8 @@ function upsertProductionChart(payload) {
         scales: {
           x: {
             type: 'linear',
+            min: getChartWindow().min,
+            max: getChartWindow().max,
             ticks: {
               color: '#8b949e',
               maxTicksLimit: 8,
@@ -282,18 +310,21 @@ function upsertProductionChart(payload) {
     return;
   }
 
+  const window = getChartWindow();
+  productionChart.options.scales.x.min = window.min;
+  productionChart.options.scales.x.max = window.max;
   productionChart.data.datasets = datasets;
   productionChart.update('none');
 }
 
 function filterSeriesByMinutes(payload, minutes) {
-  const series = payload?.series || {};
-  const allTs = Object.values(series).flatMap((item) => (item.points || []).map((point) => Number(point.ts) || 0));
-  const latest = Math.max(Date.now(), ...allTs, 0);
-  const minTs = latest - Math.max(1, Number(minutes) || 60) * 60 * 1000;
+  const { min, max } = getChartWindow(minutes);
   const next = { ...payload, minutes, series: {} };
-  Object.entries(series).forEach(([id, item]) => {
-    const points = (item.points || []).filter((point) => Number(point.ts) >= minTs);
+  Object.entries(payload?.series || {}).forEach(([id, item]) => {
+    const points = (item.points || []).filter((point) => {
+      const ts = normalizeChartTs(point.ts);
+      return ts >= min && ts <= max + 15000;
+    });
     next.series[id] = { ...item, points };
   });
   return next;

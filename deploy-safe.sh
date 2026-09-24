@@ -106,10 +106,17 @@ fi
 log "Git fetch origin"
 git fetch origin
 
+# File data runtime sering dirty di server. Stash dulu agar pull tidak gagal,
+# lalu tetap restore dari backup (bukan dari isi Git/development).
+if git status --porcelain -- "${DATA_FILES[@]/#/$DATA_DIR/}" | grep -q .; then
+  log "Stash perubahan lokal di folder data/"
+  git stash push -m "deploy-safe-data-$(date +%F_%H%M%S)" -- "${DATA_FILES[@]/#/$DATA_DIR/}" || true
+fi
+
 log "Git pull --rebase origin $BRANCH"
 git pull --rebase origin "$BRANCH"
 
-log "Restore data runtime terbaru sebelum patch"
+log "Restore data runtime produksi dari backup (bukan data Git)"
 restore_data
 
 if [[ "${SKIP_NPM:-0}" != "1" ]]; then
