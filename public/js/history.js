@@ -189,7 +189,7 @@ function renderShiftRow(r) {
   const progClass = getProgressClass(pct);
 
   return `
-    <tr>
+    <tr class="js-history-shift-row${r.has_chart ? ' has-chart' : ''}" data-device="${esc(r.device_id || '')}" data-tanggal="${esc(r.tanggal)}" data-shift="${esc(r.shift)}" title="Klik untuk melihat grafik shift ini">
       <td>${esc(formatTanggalLabel(r.tanggal))}</td>
       <td><span class="${shiftBadgeClass(r.shift)}">${esc(r.shift)}</span></td>
       <td class="total-cell">${fmtNumber(r.total_barang)} pcs</td>
@@ -265,6 +265,12 @@ function renderLastAchievement(row) {
             <div class="mini-progress-fill ${getProgressClass(pct)}" style="width:${Math.min(100, pct)}%"></div>
           </div>
           <div class="progress-ratio">${fmtNumber(row.total_barang)} / ${fmtNumber(row.target_per_shift)} · ${esc(formatSavedAt(row.timestamp_saved))}</div>
+        </div>
+      </div>
+      <div class="history-shift-chart-card">
+        <div class="history-shift-chart-title">Grafik shift ${esc(row.shift)}</div>
+        <div class="history-shift-chart-wrap">
+          <canvas class="js-history-shift-chart" data-device="${esc(row.device_id || '')}" data-tanggal="${esc(row.tanggal)}" data-shift="${esc(row.shift)}"></canvas>
         </div>
       </div>
     </div>
@@ -440,7 +446,101 @@ async function loadHistory() {
   renderDeviceFilterOptions(data.devices || []);
   renderSummary(data.summary || {});
   renderRows(data.rows || [], data.devices || []);
+  paintVisibleHistoryCharts();
   return data;
+}
+
+function formatHistoryTick(ts) {
+  return new Intl.DateTimeFormat('id-ID', {
+    timeZone: 'Asia/Jakarta',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(new Date(ts));
+}
+
+function buildHistoryChartPoints(points) {
+  const out = [];
+  let cumulative = 0;
+  (points || []).forEach((point, index) => {
+    const prev = points[index - 1];
+    const hasPulse = point.produced === true || Number(point.delta) > 0
+      || (Number(point.count) || 0) > (prev ? Number(prev.count) || 0 : Number(point.count) || 0);
+    if (hasPulse) cumulative += 1;
+    out.push({ x: Number(point.ts), y: cumulative });
+  });
+  return out;
+}
+
+async function paintHistoryChart(canvas) {
+  if (!canvas || typeof Chart === 'undefined') return;
+  const device = canvas.getAttribute('data-device');
+  const tanggal = canvas.getAttribute('data-tanggal');
+  const shift = canvas.getAttribute('data-shift');
+  if (!device || !tanggal || !shift) return;
+  try {
+    const payload = await fetchJson(`/api/history-chart?device=${encodeURIComponent(device)}&tanggal=${encodeURIComponent(tanggal)}&shift=${encodeURIComponent(shift)}`);
+    const data = buildHistoryChartPoints(payload.points || []);
+    if (canvas._chart) {
+      canvas._chart.destroy();
+      canvas._chart = null;
+    }
+    if (!data.length) {
+      canvas.parentElement?.classList.add('is-empty');
+      return;
+    }
+    canvas.parentElement?.classList.remove('is-empty');
+    canvas._chart = new Chart(canvas.getContext('2d'), {
+      type: 'line',
+      data: {
+        datasets: [{
+          label: payload.device_label || device,
+          data,
+          borderColor: '#388bfd',
+          backgroundColor: '#388bfd33',
+          borderWidth: 2,
+          tension: 0,
+          stepped: 'before',
+          pointRadius: 0,
+          fill: true,
+        }],
+      },
+      options: {
+        parsing: false,
+        maintainAspectRatio: false,
+        animation: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              title(items) { return formatHistoryTick(items[0]?.parsed?.x); },
+              label(item) { return `${fmtNumber(item.parsed?.y || 0)} pcs kumulatif`; },
+            },
+          },
+        },
+        scales: {
+          x: {
+            type: 'linear',
+            ticks: { color: '#8b949e', maxTicksLimit: 6, callback: (value) => formatHistoryTick(value) },
+            grid: { color: 'rgba(48, 54, 61, 0.7)' },
+          },
+          y: {
+            beginAtZero: true,
+            ticks: { color: '#8b949e' },
+            grid: { color: 'rgba(48, 54, 61, 0.7)' },
+          },
+        },
+      },
+    });
+  } catch (err) {
+    console.warn('Gagal memuat grafik riwayat:', err.message);
+  }
+}
+
+function paintVisibleHistoryCharts() {
+  document.querySelectorAll('.js-history-shift-chart').forEach((canvas) => {
+    paintHistoryChart(canvas);
+  });
 }
 
 function exportCsv() {
@@ -516,6 +616,19 @@ async function init() {
   });
 
   document.getElementById('historyGroups').addEventListener('click', (e) => {
+    const shiftRow = e.target.closest('.js-history-shift-row');
+    if (shiftRow && getDetailDeviceId()) {
+      const canvas = document.querySelector('.js-history-shift-chart');
+      if (canvas) {
+        canvas.setAttribute('data-device', shiftRow.getAttribute('data-device') || '');
+        canvas.setAttribute('data-tanggal', shiftRow.getAttribute('data-tanggal') || '');
+        canvas.setAttribute('data-shift', shiftRow.getAttribute('data-shift') || '');
+        const title = document.querySelector('.history-shift-chart-title');
+        if (title) title.textContent = `Grafik shift ${shiftRow.getAttribute('data-shift') || ''}`;
+        paintHistoryChart(canvas);
+      }
+      return;
+    }
     if (getDetailDeviceId()) return;
     if (e.target.closest('.history-device-name')) return;
     const header = e.target.closest('.history-device-header');
@@ -525,6 +638,7 @@ async function init() {
     const open = !group.classList.contains('is-open');
     group.classList.toggle('is-open', open);
     header.setAttribute('aria-expanded', String(open));
+    if (open) paintVisibleHistoryCharts();
   });
 
   document.getElementById('btnExpandAll').addEventListener('click', () => setAllGroupsOpen(true));

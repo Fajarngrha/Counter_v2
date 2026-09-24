@@ -107,6 +107,7 @@ let renamingDeviceId = null;
 let productionChart = null;
 let productionSeriesCache = { series: {} };
 let chartMinutes = 60;
+let lastChartResetAtSeen = 0;
 const CHART_COLORS = ['#388bfd', '#3fb950', '#d29922', '#a371f7', '#f85149', '#39d0d8', '#e3b341', '#58a6ff', '#bc8cff', '#7ee787'];
 
 function formatChartTick(ts) {
@@ -1129,6 +1130,11 @@ async function init() {
   if (typeof io === 'function') {
     const socket = io();
     socket.on('dashboard:update', async (data) => {
+      if (data?.chartResetAt && data.chartResetAt !== lastChartResetAtSeen) {
+        lastChartResetAtSeen = data.chartResetAt;
+        productionSeriesCache = { series: {} };
+        await loadProductionChart();
+      }
       if (data?.latestSample) appendProductionPoint(data.latestSample);
       if (selectedDeviceId && data.selectedDeviceId && data.selectedDeviceId !== selectedDeviceId) {
         try {

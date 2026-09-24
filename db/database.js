@@ -9,6 +9,7 @@ if (!fs.existsSync(dataDir)) {
 
 const dbPath = path.join(dataDir, 'db.json');
 const seriesPath = path.join(dataDir, 'production-series.json');
+const shiftChartsPath = path.join(dataDir, 'shift-charts.json');
 
 const SERIES_MAX_POINTS = 1800;
 const SERIES_HEARTBEAT_MS = 25000;
@@ -437,6 +438,7 @@ function getHistory(startDate, endDate, options = {}) {
     return {
       ...row,
       device_label: labelOf(row.device_id),
+      has_chart: hasArchivedShiftChart(row.device_id, row.tanggal, row.shift),
     };
   });
 
@@ -602,6 +604,13 @@ function deleteDevice(deviceId) {
     } catch {
       // ignore series cleanup error
     }
+  }
+  try {
+    const charts = readShiftChartsFile();
+    delete charts[safeDeviceId];
+    writeShiftChartsFile(charts);
+  } catch {
+    // ignore chart archive cleanup
   }
   if (data.device_meta && typeof data.device_meta === 'object') {
     delete data.device_meta[safeDeviceId];
@@ -847,6 +856,88 @@ function getProductionSeries(options = {}) {
   return { minutes: windowMinutes, hours: windowMinutes / 60, generatedAt: nowMs, series };
 }
 
+function shiftChartKey(tanggal, shift) {
+  return `${String(tanggal || '').trim()}|${String(shift || '').trim()}`;
+}
+
+function readShiftChartsFile() {
+  if (!fs.existsSync(shiftChartsPath)) return {};
+  try {
+    const parsed = JSON.parse(fs.readFileSync(shiftChartsPath, 'utf-8'));
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeShiftChartsFile(data) {
+  fs.writeFileSync(shiftChartsPath, JSON.stringify(data), 'utf-8');
+}
+
+function compactChartPoints(points, maxPoints = 480) {
+  const list = Array.isArray(points) ? points : [];
+  if (list.length <= maxPoints) return list;
+  const step = Math.ceil(list.length / maxPoints);
+  return list.filter((row, index) => index % step === 0 || index === list.length - 1);
+}
+
+function hasArchivedShiftChart(deviceId, tanggal, shift) {
+  const safeDeviceId = String(deviceId || '').trim();
+  if (!safeDeviceId || safeDeviceId === 'legacy') return false;
+  const group = readShiftChartsFile()[safeDeviceId];
+  return !!(group && group[shiftChartKey(tanggal, shift)]?.points?.length);
+}
+
+function getArchivedShiftChart(deviceId, tanggal, shift) {
+  const safeDeviceId = String(deviceId || '').trim();
+  const key = shiftChartKey(tanggal, shift);
+  const group = readShiftChartsFile()[safeDeviceId] || {};
+  const item = group[key] || null;
+  const meta = getAllDeviceMeta();
+  return {
+    device_id: safeDeviceId,
+    device_label: normalizeDeviceLabel(meta[safeDeviceId]?.label, safeDeviceId),
+    tanggal,
+    shift,
+    points: Array.isArray(item?.points) ? item.points : [],
+    savedAt: item?.savedAt || null,
+    total_barang: Number(item?.total_barang) || 0,
+  };
+}
+
+function archiveAndResetProductionSeries(deviceId, options = {}) {
+  const safeDeviceId = String(deviceId || '').trim();
+  if (!safeDeviceId) return null;
+  const tanggal = String(options.tanggal || '').trim();
+  const shift = String(options.shift || '').trim();
+  const series = readSeriesFile();
+  const points = compactChartPoints(series[safeDeviceId] || []);
+  if (tanggal && shift && points.length) {
+    const charts = readShiftChartsFile();
+    if (!charts[safeDeviceId] || typeof charts[safeDeviceId] !== 'object') {
+      charts[safeDeviceId] = {};
+    }
+    charts[safeDeviceId][shiftChartKey(tanggal, shift)] = {
+      tanggal,
+      shift,
+      device_id: safeDeviceId,
+      savedAt: nowIso(),
+      total_barang: Number(options.totalBarang) || 0,
+      points,
+    };
+    const keys = Object.keys(charts[safeDeviceId]).sort();
+    if (keys.length > 90) {
+      keys.slice(0, keys.length - 90).forEach((oldKey) => {
+        delete charts[safeDeviceId][oldKey];
+      });
+    }
+    writeShiftChartsFile(charts);
+  }
+  series[safeDeviceId] = [];
+  writeSeriesFile(series);
+  return { archived: points.length, deviceId: safeDeviceId, tanggal, shift };
+}
+
 module.exports = {
   saveShiftHistory,
   getHistory,
@@ -868,4 +959,7 @@ module.exports = {
   buildTargetSnapshot,
   appendProductionSample,
   getProductionSeries,
+  archiveAndResetProductionSeries,
+  getArchivedShiftChart,
+  hasArchivedShiftChart,
 };

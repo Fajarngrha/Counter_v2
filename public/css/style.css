@@ -1433,10 +1433,46 @@ body {
 }
 
 .history-device-group.is-open .history-device-body {
-  max-height: 280px;
+  max-height: 720px;
   opacity: 1;
   border-top-color: var(--border);
   overflow-x: auto;
+}
+
+.history-shift-chart-card {
+  margin-top: 0.9rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border);
+}
+
+.history-shift-chart-title {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-bottom: 0.45rem;
+}
+
+.history-shift-chart-wrap {
+  height: 220px;
+  position: relative;
+}
+
+.history-shift-chart-wrap.is-empty::after {
+  content: 'Grafik shift ini belum tersimpan.';
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.history-table tr.js-history-shift-row {
+  cursor: pointer;
+}
+
+.history-table tr.js-history-shift-row:hover {
+  background: rgba(56, 139, 253, 0.08);
 }
 
 .history-device-group.is-detail-open .history-device-body {

@@ -8,6 +8,7 @@ const {
   getTargetByDevice,
   buildTargetSnapshot,
   appendProductionSample,
+  archiveAndResetProductionSeries,
 } = require('../db/database');
 const {
   getCurrentShift,
@@ -26,6 +27,7 @@ const {
 
 let lastBoundaryMin = -1;
 let lastSelectedDeviceId = null;
+let lastChartResetAt = 0;
 
 function calcTargetPerShift(targetPerHour, durationHours) {
   return Math.max(0, Math.round((targetPerHour || 0) * (durationHours || 0)));
@@ -43,6 +45,8 @@ function calcRawTargetTicker(target, shift, progress) {
 
 function saveShiftRecord(tanggal, shift, totalBarang, deviceId = 'device-1') {
   const target = buildTargetSnapshot(getTargetByDevice(deviceId), shift);
+  archiveAndResetProductionSeries(deviceId, { tanggal, shift, totalBarang });
+  lastChartResetAt = Date.now();
   saveShiftHistory(tanggal, shift, totalBarang, target, deviceId);
 }
 
@@ -172,6 +176,13 @@ function handleShiftBoundary() {
     const count = Number(state.count) || 0;
     if (count > 0 && state?.shift_date && state?.shift) {
       saveShiftRecord(state.shift_date, state.shift, count, deviceId);
+    } else if (state?.shift_date && state?.shift) {
+      archiveAndResetProductionSeries(deviceId, {
+        tanggal: state.shift_date,
+        shift: state.shift,
+        totalBarang: count,
+      });
+      lastChartResetAt = Date.now();
     }
   }
 
@@ -533,6 +544,7 @@ function getDashboardData(options = {}) {
       isBehind: behind > 0,
     },
     updatedAt: selectedState.updated_at,
+    chartResetAt: lastChartResetAt,
   };
 }
 

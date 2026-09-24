@@ -4,5 +4,6 @@ node_modules/
 data/db.json
 data/shift-config.json
 data/production-series.json
+data/shift-charts.json
 data/*.broken.*
 public/data/production-series.json

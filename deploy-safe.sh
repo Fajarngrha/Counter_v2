@@ -28,6 +28,7 @@ DATA_FILES=(
   "db.json"
   "shift-config.json"
   "production-series.json"
+  "shift-charts.json"
 )
 
 SUDO_CMD=""

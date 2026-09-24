@@ -22,6 +22,7 @@ const {
 } = require('./services/mqttService');
 const {
   getHistory,
+  getArchivedShiftChart,
   getTargetByDevice,
   updateTarget,
   getState,
@@ -141,6 +142,20 @@ app.get('/api/history', requireAuth, (req, res) => {
   const device = req.query.device || 'all';
   const search = req.query.search || '';
   res.json(getHistory(start, end, { shift, device, search }));
+});
+
+app.get('/api/history-chart', requireAuth, (req, res) => {
+  try {
+    const device = String(req.query.device || '').trim();
+    const tanggal = String(req.query.tanggal || '').trim();
+    const shift = String(req.query.shift || '').trim();
+    if (!device || !tanggal || !shift) {
+      return res.status(400).json({ error: 'device, tanggal, dan shift wajib diisi' });
+    }
+    return res.json(getArchivedShiftChart(device, tanggal, shift));
+  } catch (err) {
+    return res.status(500).json({ error: err.message || 'Gagal memuat grafik riwayat' });
+  }
 });
 
 app.get('/api/production-series', requireAuth, (req, res) => {
