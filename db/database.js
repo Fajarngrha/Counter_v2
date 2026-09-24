@@ -682,11 +682,28 @@ function toWibParts(date = new Date()) {
 function parseSampleTime(waktu) {
   if (!waktu) return new Date();
   const text = String(waktu).trim();
-  const native = Date.parse(text);
-  if (Number.isFinite(native)) return new Date(native);
-  const match = text.match(/^(\d{4}-\d{2}-\d{2})[ T](\d{2}):(\d{2}):(\d{2})/);
-  if (match) return new Date(`${match[1]}T${match[2]}:${match[3]}:${match[4]}+07:00`);
-  return new Date();
+  if (!text) return new Date();
+
+  const hasZone = /[zZ]$/.test(text) || /[+-]\d{2}:?\d{2}$/.test(text);
+  const match = text.match(/^(\d{4}-\d{2}-\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?/);
+  let parsed = null;
+
+  // Payload ESP/RTC tanpa zona = jam WIB, jangan di-parse sebagai UTC server.
+  if (match && !hasZone) {
+    const sec = match[4] || '00';
+    parsed = new Date(`${match[1]}T${match[2]}:${match[3]}:${sec}+07:00`);
+  } else {
+    const native = Date.parse(text);
+    if (Number.isFinite(native)) parsed = new Date(native);
+  }
+
+  if (!parsed || Number.isNaN(parsed.getTime())) return new Date();
+
+  // Jika jam device jauh dari jam server, pakai waktu terima aktual.
+  if (Math.abs(parsed.getTime() - Date.now()) > 3 * 60 * 60 * 1000) {
+    return new Date();
+  }
+  return parsed;
 }
 
 function readSeriesFile() {

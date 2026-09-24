@@ -119,6 +119,17 @@ function formatChartTick(ts) {
   }).format(new Date(ts));
 }
 
+function normalizeChartTs(ts) {
+  const t = Number(ts);
+  if (!Number.isFinite(t)) return t;
+  const skew = t - Date.now();
+  // Titik lama yang ter-parse sebagai UTC di server (maju sekitar 7 jam).
+  if (skew > 5 * 60 * 60 * 1000 && skew < 9 * 60 * 60 * 1000) {
+    return t - 7 * 60 * 60 * 1000;
+  }
+  return t;
+}
+
 function buildChartPoints(points) {
   const out = [];
   let cumulative = 0;
@@ -131,11 +142,12 @@ function buildChartPoints(points) {
       || count > prevCount;
     const step = hasSensorPulse ? 1 : 0;
     cumulative += step;
+    const x = normalizeChartTs(point.ts);
     out.push({
-      x: Number(point.ts),
+      x,
       y: cumulative,
       tanggal: point.tanggal,
-      waktu: point.waktu,
+      waktu: formatChartTick(x),
       device: point.device_label,
       delta: step,
       count: Number(point.count) || 0,
