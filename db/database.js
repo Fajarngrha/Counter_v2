@@ -392,15 +392,53 @@ function saveShiftHistory(tanggal, shift, totalBarang, targetSnapshot, deviceId 
   return { changes: 1, lastInsertRowid: id };
 }
 
+function normalizeHistoryDate(value) {
+  const text = String(value || '').trim();
+  const iso = text.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
+  const dmy = text.match(/^(\d{2})[\/.](\d{2})[\/.](\d{4})$/);
+  if (dmy) return `${dmy[3]}-${dmy[2]}-${dmy[1]}`;
+  const mdy = text.match(/^(\d{2})[\/.](\d{2})[\/.](\d{4})$/);
+  if (mdy) return `${mdy[3]}-${mdy[1]}-${mdy[2]}`;
+  return text;
+}
+
+function getHistoryDateBounds(rows) {
+  const dates = (rows || []).map((row) => String(row.tanggal || '').trim()).filter(Boolean).sort();
+  return {
+    minTanggal: dates[0] || null,
+    maxTanggal: dates[dates.length - 1] || null,
+    totalAll: rows.length,
+  };
+}
+
 function getHistory(startDate, endDate, options = {}) {
   const data = readDb();
   const fallbackTarget = data.production_target;
   const { shift = 'all', device = 'all', search = '' } = options;
   const q = search.trim().toLowerCase();
+  const bounds = getHistoryDateBounds(data.shift_history || []);
+  let from = normalizeHistoryDate(startDate);
+  let to = normalizeHistoryDate(endDate);
+  if (from && to && from > to) {
+    const swap = from;
+    from = to;
+    to = swap;
+  }
 
-  let rows = data.shift_history.filter(
-    (r) => r.tanggal >= startDate && r.tanggal <= endDate
-  );
+  let rows = (data.shift_history || []).filter((r) => {
+    const tanggal = String(r.tanggal || '').trim();
+    if (from && tanggal < from) return false;
+    if (to && tanggal > to) return false;
+    return true;
+  });
+
+  // Jika filter tanggal tidak mengenai data, tampilkan seluruh riwayat yang ada.
+  if (!rows.length && bounds.totalAll > 0 && (from || to)) {
+    rows = [...(data.shift_history || [])];
+    from = bounds.minTanggal;
+    to = bounds.maxTanggal;
+  }
 
   if (shift && shift !== 'all') {
     rows = rows.filter((r) => r.shift === shift);
@@ -433,12 +471,21 @@ function getHistory(startDate, endDate, options = {}) {
     return b.id - a.id;
   });
 
+  let chartIndex = {};
+  try {
+    chartIndex = readShiftChartsFile();
+  } catch {
+    chartIndex = {};
+  }
+
   const enriched = rows.map((r) => {
     const row = normalizeHistoryRow(r, fallbackTarget);
+    const deviceId = row.device_id;
+    const chartGroup = chartIndex[deviceId];
     return {
       ...row,
-      device_label: labelOf(row.device_id),
-      has_chart: hasArchivedShiftChart(row.device_id, row.tanggal, row.shift),
+      device_label: labelOf(deviceId),
+      has_chart: !!(chartGroup && chartGroup[shiftChartKey(row.tanggal, row.shift)]?.points?.length),
     };
   });
 
@@ -465,6 +512,11 @@ function getHistory(startDate, endDate, options = {}) {
       totalBarang,
       totalTarget,
       overallAchievement,
+    },
+    range: {
+      start: from || startDate,
+      end: to || endDate,
+      ...bounds,
     },
   };
 }

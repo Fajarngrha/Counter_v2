@@ -443,6 +443,8 @@ async function loadHistory() {
   });
 
   const data = await fetchJson(`/api/history?${params.toString()}`);
+  if (data.range?.start) document.getElementById('startDate').value = data.range.start;
+  if (data.range?.end) document.getElementById('endDate').value = data.range.end;
   renderDeviceFilterOptions(data.devices || []);
   renderSummary(data.summary || {});
   renderRows(data.rows || [], data.devices || []);
@@ -586,12 +588,21 @@ function exportCsv() {
   URL.revokeObjectURL(url);
 }
 
+function formatDateInputWib(date = new Date()) {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Jakarta',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(date);
+}
+
 function setDefaultDates() {
   const end = new Date();
   const start = new Date();
-  start.setDate(start.getDate() - 90);
-  document.getElementById('endDate').value = end.toISOString().slice(0, 10);
-  document.getElementById('startDate').value = start.toISOString().slice(0, 10);
+  start.setDate(start.getDate() - 365);
+  document.getElementById('endDate').value = formatDateInputWib(end);
+  document.getElementById('startDate').value = formatDateInputWib(start);
 }
 
 async function init() {
@@ -654,5 +665,11 @@ async function init() {
 
 init().catch((e) => {
   console.error(e);
+  const empty = document.getElementById('emptyState');
+  if (empty) {
+    empty.style.display = 'block';
+    empty.textContent = e.message || 'Gagal memuat riwayat. Coba refresh halaman.';
+    return;
+  }
   window.location.href = '/';
 });
