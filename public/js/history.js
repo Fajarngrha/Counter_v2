@@ -241,7 +241,7 @@ function renderLastAchievement(row) {
   const pct = row.achievement_percent || 0;
   return `
     <div class="history-last-achievement">
-      <div class="history-last-label">Pencapaian terakhir tersimpan</div>
+      <div class="history-last-label">Pencapaian shift tersimpan</div>
       <div class="history-last-grid">
         <div class="history-last-item">
           <div class="history-last-item-label">Tanggal / Shift</div>
@@ -448,6 +448,8 @@ async function loadHistory() {
   renderDeviceFilterOptions(data.devices || []);
   renderSummary(data.summary || {});
   renderRows(data.rows || [], data.devices || []);
+  const first = latestRow(data.rows || []);
+  if (first) markSelectedShiftRow(first.device_id, first.tanggal, first.shift);
   paintVisibleHistoryCharts();
   return data;
 }
@@ -537,6 +539,37 @@ async function paintHistoryChart(canvas) {
   } catch (err) {
     console.warn('Gagal memuat grafik riwayat:', err.message);
   }
+}
+
+function findHistoryRow(device, tanggal, shift) {
+  return (currentRows || []).find((row) => (
+    String(row.device_id || '') === String(device || '')
+    && String(row.tanggal || '') === String(tanggal || '')
+    && String(row.shift || '') === String(shift || '')
+  )) || null;
+}
+
+function markSelectedShiftRow(device, tanggal, shift) {
+  document.querySelectorAll('.js-history-shift-row').forEach((tr) => {
+    const active = tr.getAttribute('data-device') === String(device || '')
+      && tr.getAttribute('data-tanggal') === String(tanggal || '')
+      && tr.getAttribute('data-shift') === String(shift || '');
+    tr.classList.toggle('is-selected', active);
+  });
+}
+
+function selectHistoryShift(device, tanggal, shift) {
+  const row = findHistoryRow(device, tanggal, shift);
+  if (!row) return;
+  const card = document.querySelector('.history-last-achievement');
+  if (card) {
+    const wrap = document.createElement('div');
+    wrap.innerHTML = renderLastAchievement(row);
+    const next = wrap.firstElementChild;
+    if (next) card.replaceWith(next);
+  }
+  markSelectedShiftRow(device, tanggal, shift);
+  paintVisibleHistoryCharts();
 }
 
 function paintVisibleHistoryCharts() {
@@ -629,15 +662,11 @@ async function init() {
   document.getElementById('historyGroups').addEventListener('click', (e) => {
     const shiftRow = e.target.closest('.js-history-shift-row');
     if (shiftRow && getDetailDeviceId()) {
-      const canvas = document.querySelector('.js-history-shift-chart');
-      if (canvas) {
-        canvas.setAttribute('data-device', shiftRow.getAttribute('data-device') || '');
-        canvas.setAttribute('data-tanggal', shiftRow.getAttribute('data-tanggal') || '');
-        canvas.setAttribute('data-shift', shiftRow.getAttribute('data-shift') || '');
-        const title = document.querySelector('.history-shift-chart-title');
-        if (title) title.textContent = `Grafik shift ${shiftRow.getAttribute('data-shift') || ''}`;
-        paintHistoryChart(canvas);
-      }
+      selectHistoryShift(
+        shiftRow.getAttribute('data-device') || '',
+        shiftRow.getAttribute('data-tanggal') || '',
+        shiftRow.getAttribute('data-shift') || '',
+      );
       return;
     }
     if (getDetailDeviceId()) return;

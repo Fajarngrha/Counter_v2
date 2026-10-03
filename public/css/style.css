@@ -1475,6 +1475,11 @@ body {
   background: rgba(56, 139, 253, 0.08);
 }
 
+.history-table tr.js-history-shift-row.is-selected {
+  background: rgba(56, 139, 253, 0.16);
+  outline: 1px solid rgba(56, 139, 253, 0.45);
+}
+
 .history-device-group.is-detail-open .history-device-body {
   max-height: none;
   opacity: 1;
