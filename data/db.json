@@ -904,10 +904,10 @@
   ],
   "current_state": {
     "shift": "Shift 1",
-    "shift_date": "2026-09-23",
-    "count": 2309,
-    "daily_total": 2309,
-    "daily_date": "2026-09-23",
+    "shift_date": "2026-10-08",
+    "count": 0,
+    "daily_total": 0,
+    "daily_date": "2026-10-08",
     "last_iot_seen": "2026-09-23T07:06:22.009Z",
     "last_device_time": null,
     "last_device_counter": null,
@@ -915,7 +915,7 @@
     "device_reset_pending": true,
     "target_ticker_offset": 0,
     "target_ticker_reset_elapsed_seconds": null,
-    "updated_at": "2026-09-23T08:19:59.688Z"
+    "updated_at": "2026-10-08T07:53:58.323Z"
   },
   "production_target": {
     "target_per_hour": 9,
@@ -930,10 +930,10 @@
   "devices": {
     "device-test": {
       "shift": "Shift 1",
-      "shift_date": "2026-09-23",
-      "count": 2811,
-      "daily_total": 2811,
-      "daily_date": "2026-09-23",
+      "shift_date": "2026-10-08",
+      "count": 0,
+      "daily_total": 0,
+      "daily_date": "2026-10-08",
       "last_iot_seen": "2026-09-23T07:06:22.009Z",
       "last_device_time": null,
       "last_device_counter": null,
@@ -941,14 +941,14 @@
       "device_reset_pending": true,
       "target_ticker_offset": 0,
       "target_ticker_reset_elapsed_seconds": null,
-      "updated_at": "2026-09-23T08:19:59.669Z"
+      "updated_at": "2026-10-08T07:53:58.311Z"
     },
     "device-fajar": {
       "shift": "Shift 1",
-      "shift_date": "2026-09-23",
-      "count": 3510,
-      "daily_total": 3510,
-      "daily_date": "2026-09-23",
+      "shift_date": "2026-10-08",
+      "count": 0,
+      "daily_total": 0,
+      "daily_date": "2026-10-08",
       "last_iot_seen": "2026-09-23T07:06:22.009Z",
       "last_device_time": null,
       "last_device_counter": null,
@@ -956,14 +956,14 @@
       "device_reset_pending": true,
       "target_ticker_offset": 0,
       "target_ticker_reset_elapsed_seconds": null,
-      "updated_at": "2026-09-23T08:19:59.677Z"
+      "updated_at": "2026-10-08T07:53:58.315Z"
     },
     "device-nugraha": {
       "shift": "Shift 1",
-      "shift_date": "2026-09-23",
-      "count": 3085,
-      "daily_total": 3085,
-      "daily_date": "2026-09-23",
+      "shift_date": "2026-10-08",
+      "count": 0,
+      "daily_total": 0,
+      "daily_date": "2026-10-08",
       "last_iot_seen": "2026-09-23T07:06:22.009Z",
       "last_device_time": null,
       "last_device_counter": null,
@@ -971,14 +971,14 @@
       "device_reset_pending": true,
       "target_ticker_offset": 0,
       "target_ticker_reset_elapsed_seconds": null,
-      "updated_at": "2026-09-23T08:19:59.681Z"
+      "updated_at": "2026-10-08T07:53:58.317Z"
     },
     "device-maintenance": {
       "shift": "Shift 1",
-      "shift_date": "2026-09-23",
-      "count": 2339,
-      "daily_total": 2339,
-      "daily_date": "2026-09-23",
+      "shift_date": "2026-10-08",
+      "count": 0,
+      "daily_total": 0,
+      "daily_date": "2026-10-08",
       "last_iot_seen": "2026-09-23T07:06:22.009Z",
       "last_device_time": null,
       "last_device_counter": null,
@@ -986,14 +986,14 @@
       "device_reset_pending": true,
       "target_ticker_offset": 0,
       "target_ticker_reset_elapsed_seconds": null,
-      "updated_at": "2026-09-23T08:19:59.685Z"
+      "updated_at": "2026-10-08T07:53:58.321Z"
     },
     "device-mtn": {
       "shift": "Shift 1",
-      "shift_date": "2026-09-23",
-      "count": 2309,
-      "daily_total": 2309,
-      "daily_date": "2026-09-23",
+      "shift_date": "2026-10-08",
+      "count": 0,
+      "daily_total": 0,
+      "daily_date": "2026-10-08",
       "last_iot_seen": "2026-09-23T07:06:22.009Z",
       "last_device_time": null,
       "last_device_counter": null,
@@ -1001,7 +1001,7 @@
       "device_reset_pending": true,
       "target_ticker_offset": 0,
       "target_ticker_reset_elapsed_seconds": null,
-      "updated_at": "2026-09-23T08:19:59.688Z"
+      "updated_at": "2026-10-08T07:53:58.323Z"
     }
   },
   "selected_device_id": "device-mtn",
