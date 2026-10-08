@@ -454,6 +454,18 @@ async function loadHistory() {
   return data;
 }
 
+function getHistoryChartTheme() {
+  const read = (name, fallback) => (
+    window.IotTheme?.cssVar(name, fallback)
+    || getComputedStyle(document.documentElement).getPropertyValue(name).trim()
+    || fallback
+  );
+  return {
+    tick: read('--chart-tick', '#8b949e'),
+    grid: read('--chart-grid', 'rgba(48, 54, 61, 0.7)'),
+  };
+}
+
 function formatHistoryTick(ts) {
   return new Intl.DateTimeFormat('id-ID', {
     timeZone: 'Asia/Jakarta',
@@ -525,13 +537,13 @@ async function paintHistoryChart(canvas) {
         scales: {
           x: {
             type: 'linear',
-            ticks: { color: '#8b949e', maxTicksLimit: 6, callback: (value) => formatHistoryTick(value) },
-            grid: { color: 'rgba(48, 54, 61, 0.7)' },
+            ticks: { color: getHistoryChartTheme().tick, maxTicksLimit: 6, callback: (value) => formatHistoryTick(value) },
+            grid: { color: getHistoryChartTheme().grid },
           },
           y: {
             beginAtZero: true,
-            ticks: { color: '#8b949e' },
-            grid: { color: 'rgba(48, 54, 61, 0.7)' },
+            ticks: { color: getHistoryChartTheme().tick },
+            grid: { color: getHistoryChartTheme().grid },
           },
         },
       },
@@ -647,6 +659,9 @@ async function init() {
 
   setDefaultDates();
   await loadHistory();
+  window.addEventListener('iot-theme-change', () => {
+    paintVisibleHistoryCharts();
+  });
 
   document.getElementById('btnApply').addEventListener('click', () => {
     loadHistory().catch((e) => alert(e.message));

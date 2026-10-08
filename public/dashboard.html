@@ -4,7 +4,17 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>IoT Production Counter - Dashboard</title>
-  <link rel="stylesheet" href="/css/style.css?v=20260921e">
+  <link rel="stylesheet" href="/css/style.css?v=20261008a">
+  <script>
+    (function () {
+      try {
+        var theme = localStorage.getItem('iot_ui_theme');
+        if (theme !== 'light' && theme !== 'dark') theme = 'dark';
+        document.documentElement.setAttribute('data-theme', theme);
+        document.documentElement.style.colorScheme = theme;
+      } catch (e) {}
+    })();
+  </script>
 </head>
 <body>
   <div class="dashboard">
@@ -17,6 +27,16 @@
       </div>
 
       <div class="header-actions">
+        <button class="btn btn-ghost btn-sm btn-theme" type="button" data-theme-toggle aria-label="Ganti mode tampilan">
+          <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <circle cx="12" cy="12" r="4"></circle>
+            <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"></path>
+          </svg>
+          <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <path d="M21 14.5A8.5 8.5 0 1 1 9.5 3 7 7 0 0 0 21 14.5z"></path>
+          </svg>
+          <span class="theme-label">Gelap</span>
+        </button>
         <a class="btn btn-ghost btn-sm" href="/history" title="Riwayat">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
             <path d="M3 12a9 9 0 1 0 3-6.7"></path>
@@ -66,7 +86,7 @@
         </div>
         <div id="shiftLabel" class="status-value" style="font-size: 1.2rem;">-</div>
         <div id="shiftRange" class="status-sub">-</div>
-        <div class="status-sub status-sub--hint">Save Data Cut-off: 07:00 / 16:00 / 00:00 WIB</div>
+        <div class="status-sub status-sub--hint"></div>
       </div>
 
       <div class="card">
@@ -433,9 +453,10 @@
     </div>
   </div>
 
+  <script src="/js/theme.js?v=20261008a"></script>
   <script src="/vendor/chart.umd.min.js"></script>
   <script src="/socket.io/socket.io.js"></script>
-  <script src="/js/dashboard.js?v=20260924c"></script>
+  <script src="/js/dashboard.js?v=20261008a"></script>
 </body>
 </html>
 

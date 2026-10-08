@@ -250,6 +250,35 @@ function seriesToDatasets(payload) {
   });
 }
 
+function getChartTheme() {
+  const read = (name, fallback) => (
+    window.IotTheme?.cssVar(name, fallback)
+    || getComputedStyle(document.documentElement).getPropertyValue(name).trim()
+    || fallback
+  );
+  return {
+    tick: read('--chart-tick', '#8b949e'),
+    grid: read('--chart-grid', 'rgba(48, 54, 61, 0.7)'),
+    text: read('--text-secondary', '#8b949e'),
+  };
+}
+
+function applyLiveChartTheme(chart) {
+  if (!chart) return;
+  const theme = getChartTheme();
+  if (chart.options.plugins?.legend?.labels) chart.options.plugins.legend.labels.color = theme.text;
+  if (chart.options.scales?.x) {
+    chart.options.scales.x.ticks.color = theme.tick;
+    chart.options.scales.x.grid.color = theme.grid;
+    if (chart.options.scales.x.title) chart.options.scales.x.title.color = theme.text;
+  }
+  if (chart.options.scales?.y) {
+    chart.options.scales.y.ticks.color = theme.tick;
+    chart.options.scales.y.grid.color = theme.grid;
+    if (chart.options.scales.y.title) chart.options.scales.y.title.color = theme.text;
+  }
+}
+
 function upsertProductionChart(payload) {
   productionSeriesCache = alignChartSeries(payload || { series: {} });
   const canvas = el('productionChart');
@@ -268,7 +297,7 @@ function upsertProductionChart(payload) {
         interaction: { mode: 'nearest', intersect: false },
         plugins: {
           legend: {
-            labels: { color: '#8b949e', boxWidth: 12, usePointStyle: true },
+            labels: { color: getChartTheme().text, boxWidth: 12, usePointStyle: true },
           },
           tooltip: {
             callbacks: {
@@ -292,18 +321,18 @@ function upsertProductionChart(payload) {
             min: getChartWindow().min,
             max: getChartWindow().max,
             ticks: {
-              color: '#8b949e',
+              color: getChartTheme().tick,
               maxTicksLimit: 8,
               callback: (value) => formatChartTick(value),
             },
-            grid: { color: 'rgba(48, 54, 61, 0.7)' },
-            title: { display: true, text: 'Waktu', color: '#8b949e' },
+            grid: { color: getChartTheme().grid },
+            title: { display: true, text: 'Waktu', color: getChartTheme().text },
           },
           y: {
             beginAtZero: true,
-            ticks: { color: '#8b949e' },
-            grid: { color: 'rgba(48, 54, 61, 0.7)' },
-            title: { display: true, text: 'Pencapaian (pcs)', color: '#8b949e' },
+            ticks: { color: getChartTheme().tick },
+            grid: { color: getChartTheme().grid },
+            title: { display: true, text: 'Pencapaian (pcs)', color: getChartTheme().text },
           },
         },
       },
@@ -340,7 +369,7 @@ function drawFallbackChart(payload) {
   const height = wrap?.clientHeight || 280;
   canvas.width = width;
   canvas.height = height;
-  ctx.fillStyle = '#0d1117';
+  ctx.fillStyle = window.IotTheme?.cssVar('--bg-input', '#0d1117') || '#0d1117';
   ctx.fillRect(0, 0, width, height);
   const datasets = seriesToDatasets(payload).filter((set) => set.data.some((row) => row.y != null));
   if (!datasets.length) {
@@ -1096,6 +1125,11 @@ async function init() {
   render(initial);
   await initTargetConfig();
   await loadProductionChart();
+  window.addEventListener('iot-theme-change', () => {
+    if (!productionChart) return;
+    applyLiveChartTheme(productionChart);
+    productionChart.update('none');
+  });
 
   const chartRangeMenu = document.getElementById('chartRangeMenu');
   const btnChartRange = document.getElementById('btnChartRange');
