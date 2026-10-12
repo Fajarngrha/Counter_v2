@@ -188,11 +188,18 @@ function normalizeDeviceAddress(value) {
   return text.slice(0, 120);
 }
 
+function normalizeWarningGapPcs(value) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0) return 50;
+  return Math.min(100000, Math.floor(parsed));
+}
+
 function normalizeDeviceMeta(meta = {}, deviceId) {
   return {
     label: normalizeDeviceLabel(meta.label, deviceId),
     address: normalizeDeviceAddress(meta.address),
     last_topic: normalizeDeviceAddress(meta.last_topic),
+    warning_gap_pcs: normalizeWarningGapPcs(meta.warning_gap_pcs),
   };
 }
 

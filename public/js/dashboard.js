@@ -93,6 +93,12 @@ const inpRenameDeviceLabelEl = el('inpRenameDeviceLabel');
 const renameDeviceHintEl = el('renameDeviceHint');
 const btnCancelRenameDeviceEl = el('btnCancelRenameDevice');
 const btnSaveRenameDeviceEl = el('btnSaveRenameDevice');
+const warningGapModalEl = el('warningGapModal');
+const lblWarningGapDeviceEl = el('lblWarningGapDevice');
+const inpWarningGapPcsEl = el('inpWarningGapPcs');
+const warningGapHintEl = el('warningGapHint');
+const btnCancelWarningGapEl = el('btnCancelWarningGap');
+const btnSaveWarningGapEl = el('btnSaveWarningGap');
 
 let lastCounter = null;
 let lastTargetTickerValue = null;
@@ -104,6 +110,7 @@ let deviceMenuOutsideListenerBound = false;
 let deviceGridHandlersBound = false;
 let openedDeviceMenuId = null;
 let renamingDeviceId = null;
+let warningGapDeviceId = null;
 let productionChart = null;
 let productionSeriesCache = { series: {} };
 let chartMinutes = 60;
@@ -544,6 +551,17 @@ function showRenameDeviceModal(show) {
   setTimeout(() => inpRenameDeviceLabelEl?.focus(), 0);
 }
 
+function showWarningGapModal(show) {
+  if (!warningGapModalEl) return;
+  warningGapModalEl.classList.toggle('hidden', !show);
+  warningGapModalEl.classList.toggle('show', show);
+  if (!show) {
+    warningGapDeviceId = null;
+    return;
+  }
+  setTimeout(() => inpWarningGapPcsEl?.focus(), 0);
+}
+
 function saveTargetToStorage(model, pcsPerInterval, intervalSeconds) {
   localStorage.setItem(
     TARGET_STORAGE_KEY,
@@ -920,7 +938,16 @@ function renderDeviceCards(devices, activeDeviceId) {
     return `
       <div class="device-item ${isActive ? 'device-item--active' : ''}" data-device-id="${device.id}" role="button" tabindex="0">
         <div class="device-item-top">
-          <span class="device-id">${machineTitle}</span>
+          <span class="device-id-wrap">
+            <span class="device-id">${machineTitle}</span>
+            ${device.warning ? `<span class="device-warn" title="Selisih ${fmtNumber(device.gapPcs)} pcs (ambang ${fmtNumber(device.warningGapPcs)} pcs)">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M10.3 3.2 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L14.7 3.2a2 2 0 0 0-3.4 0z"></path>
+                <line x1="12" y1="9" x2="12" y2="13"></line>
+                <line x1="12" y1="17" x2="12.01" y2="17"></line>
+              </svg>
+            </span>` : ''}
+          </span>
           <div class="device-top-right">
             <span class="device-status-badge ${statusClass}">${statusText}</span>
             <div class="device-menu-wrap">
@@ -934,6 +961,7 @@ function renderDeviceCards(devices, activeDeviceId) {
               <div class="device-menu ${isMenuOpen ? 'is-open' : ''}" data-device-menu="${device.id}">
                 <button class="btn btn-ghost btn-sm js-device-action-copy-id" type="button" data-device-id="${device.id}">Copy Device ID</button>
                 <button class="btn btn-ghost btn-sm js-device-action-rename" type="button" data-device-id="${device.id}" data-device-label="${machineTitle}">Ubah Nama</button>
+                <button class="btn btn-ghost btn-sm js-device-action-warning" type="button" data-device-id="${device.id}" data-device-label="${machineTitle}" data-warning-gap="${Number(device.warningGapPcs) || 0}">Peringatan</button>
                 <button class="btn btn-danger btn-sm js-device-action-delete" type="button" data-device-id="${device.id}" data-device-label="${machineTitle}">Hapus</button>
               </div>
             </div>
@@ -979,6 +1007,24 @@ function renderDeviceCards(devices, activeDeviceId) {
         if (renameDeviceHintEl) renameDeviceHintEl.textContent = 'Masukkan nama mesin lalu klik Simpan.';
         closeAllDeviceMenus();
         showRenameDeviceModal(true);
+        return;
+      }
+
+      const warningBtn = ev.target.closest('.js-device-action-warning');
+      if (warningBtn) {
+        ev.stopPropagation();
+        const deviceId = warningBtn.getAttribute('data-device-id');
+        const currentLabel = warningBtn.getAttribute('data-device-label') || deviceId;
+        const currentGap = Number(warningBtn.getAttribute('data-warning-gap'));
+        if (!deviceId) return;
+        warningGapDeviceId = deviceId;
+        if (lblWarningGapDeviceEl) lblWarningGapDeviceEl.textContent = `${currentLabel} (${deviceId})`;
+        if (inpWarningGapPcsEl) inpWarningGapPcsEl.value = Number.isFinite(currentGap) ? String(currentGap) : '50';
+        if (warningGapHintEl) {
+          warningGapHintEl.textContent = 'Selisih antara Target Saat Ini dan Counter Aktual';
+        }
+        closeAllDeviceMenus();
+        showWarningGapModal(true);
         return;
       }
 
@@ -1236,6 +1282,33 @@ async function init() {
 
   btnCancelRenameDeviceEl?.addEventListener('click', () => {
     showRenameDeviceModal(false);
+  });
+
+  warningGapModalEl?.addEventListener('click', (ev) => {
+    if (ev.target === warningGapModalEl) showWarningGapModal(false);
+  });
+
+  btnCancelWarningGapEl?.addEventListener('click', () => {
+    showWarningGapModal(false);
+  });
+
+  btnSaveWarningGapEl?.addEventListener('click', async () => {
+    const deviceId = String(warningGapDeviceId || '').trim();
+    const gap = Math.floor(Number(inpWarningGapPcsEl?.value));
+    if (!deviceId) return;
+    if (!Number.isFinite(gap) || gap < 0) {
+      if (warningGapHintEl) warningGapHintEl.textContent = 'Masukkan angka 0 atau lebih.';
+      return;
+    }
+    try {
+      const res = await putJson(`/api/devices/${encodeURIComponent(deviceId)}/warning-gap`, { warningGapPcs: gap });
+      showWarningGapModal(false);
+      render(res.dashboard || await refreshDashboard(deviceId));
+      showToast(gap === 0 ? 'Peringatan dimatikan' : `Peringatan ${fmtNumber(gap)} pcs`, 'success');
+    } catch (err) {
+      if (warningGapHintEl) warningGapHintEl.textContent = err.message || 'Gagal simpan Peringatan';
+      showToast(err.message || 'Gagal simpan Peringatan', 'error');
+    }
   });
 
   btnSaveRenameDeviceEl?.addEventListener('click', async () => {

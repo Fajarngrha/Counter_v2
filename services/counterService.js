@@ -458,11 +458,17 @@ function getDashboardData(options = {}) {
       const count = Number(state.count) || 0;
       const dailyTotal = state.daily_date === today ? (Number(state.daily_total) || 0) : count;
       const targetPerShiftByDevice = calcTargetPerShift(targetByDevice.target_per_hour, shift.durationHours);
+      const targetNow = Number(targetTickerByDevice?.value) || 0;
+      const warningGapPcs = Number(deviceMeta?.[deviceId]?.warning_gap_pcs);
+      const gapPcs = Math.abs(targetNow - count);
       return {
         id: deviceId,
         label: deviceMeta?.[deviceId]?.label || `Mesin ${deviceId}`,
         address: deviceMeta?.[deviceId]?.address || null,
         lastTopic: deviceMeta?.[deviceId]?.last_topic || null,
+        warningGapPcs: Number.isFinite(warningGapPcs) ? warningGapPcs : 50,
+        gapPcs,
+        warning: Number.isFinite(warningGapPcs) ? warningGapPcs > 0 && gapPcs >= warningGapPcs : gapPcs >= 50,
         count,
         dailyTotal,
         iot,

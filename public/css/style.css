@@ -629,14 +629,41 @@ html[data-theme="light"] .btn-theme .icon-sun {
   gap: 0.35rem;
 }
 
+.device-id-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+  max-width: calc(100% - 92px);
+}
+
 .device-id {
   font-size: 0.86rem;
   color: var(--text-primary);
   font-weight: 700;
-  max-width: 165px;
+  max-width: 140px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.device-warn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  color: var(--warning);
+}
+
+.device-warn svg {
+  width: 16px;
+  height: 16px;
+}
+
+html[data-theme="light"] .device-warn {
+  color: #9a6700;
 }
 
 .device-count {

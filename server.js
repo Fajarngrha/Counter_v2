@@ -219,6 +219,26 @@ app.post('/api/devices', requireAuth, (req, res) => {
   return res.json({ success: true, deviceId: rawId, dashboard });
 });
 
+app.put('/api/devices/:id/warning-gap', requireAuth, (req, res) => {
+  const deviceId = String(req.params.id || '').trim();
+  const raw = req.body?.warningGapPcs;
+  const gap = Math.floor(Number(raw));
+  if (!deviceId) return res.status(400).json({ error: 'deviceId tidak valid' });
+  if (!Number.isFinite(gap) || gap < 0) {
+    return res.status(400).json({ error: 'Ambang selisih harus angka 0 atau lebih. 0 = matikan peringatan.' });
+  }
+  if (gap > 100000) return res.status(400).json({ error: 'Ambang selisih terlalu besar.' });
+
+  try {
+    const updated = updateDeviceMeta(deviceId, { warning_gap_pcs: gap });
+    const dashboard = getDashboardData({ deviceId });
+    broadcastDashboard(dashboard);
+    return res.json({ success: true, deviceId, meta: updated, dashboard });
+  } catch (err) {
+    return res.status(400).json({ error: err.message || 'Gagal simpan ambang peringatan' });
+  }
+});
+
 app.put('/api/devices/:id', requireAuth, (req, res) => {
   const deviceId = String(req.params.id || '').trim();
   const label = String(req.body?.label || '').trim();
